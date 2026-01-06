@@ -78,7 +78,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "error"
+              "options": "Error"
             },
             "properties": [
               {
@@ -93,7 +93,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "warn"
+              "options": "Warn"
             },
             "properties": [
               {
@@ -108,7 +108,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "info"
+              "options": "Info"
             },
             "properties": [
               {
@@ -123,7 +123,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "debug"
+              "options": "Debug"
             },
             "properties": [
               {
@@ -138,7 +138,7 @@
         ]
       },
       "gridPos": {
-        "h": 8,
+        "h": 6,
         "w": 24,
         "x": 0,
         "y": 0
@@ -166,15 +166,15 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum by (severity) (count_over_time({service_name=\"$service\", environment=\"$environment\"} | json | severity =~ \"$level\" | __error__=\"\" [$__auto]))",
-          "legendFormat": "{{severity}}",
+          "expr": "sum by (level) (count_over_time({service_name=\"$service\", environment=~\"$environment\", level=~\"$level\"} [$__auto]))",
+          "legendFormat": "{{level}}",
           "queryType": "range",
           "refId": "A"
         }
       ],
       "title": "Log Volume Over Time (by Level)",
       "type": "timeseries",
-      "description": "Shows the volume of logs over time, broken down by log level (error, warn, info, debug)"
+      "description": "Shows the volume of logs over time, broken down by log level"
     },
     {
       "datasource": {
@@ -182,10 +182,10 @@
         "uid": "loki"
       },
       "gridPos": {
-        "h": 12,
+        "h": 16,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 6
       },
       "id": 2,
       "options": {
@@ -205,131 +205,14 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "{service_name=\"$service\", environment=\"$environment\"} | json | severity =~ \"$level\" | __error__=\"\"",
+          "expr": "{service_name=\"$service\", environment=~\"$environment\", level=~\"$level\"} $search",
           "queryType": "range",
           "refId": "A"
         }
       ],
       "title": "Live Log Stream",
       "type": "logs",
-      "description": "Real-time log stream with filtering capabilities. Use the search box to filter logs."
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 10
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Count"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 100
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Error Message"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 800
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 16,
-        "x": 0,
-        "y": 20
-      },
-      "id": 3,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "Count"
-          }
-        ]
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "editorMode": "code",
-          "expr": "topk(20, sum by (body) (count_over_time({service_name=\"$service\", environment=\"$environment\"} | json | severity =~ \"error|fatal\" | __error__=\"\" [$__range])))",
-          "legendFormat": "{{body}}",
-          "queryType": "instant",
-          "refId": "A"
-        }
-      ],
-      "title": "Top Error Messages",
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {},
-            "renameByName": {
-              "Value": "Count",
-              "body": "Error Message"
-            }
-          }
-        }
-      ],
-      "type": "table",
-      "description": "Most frequently occurring error messages in the selected time range"
+      "description": "Real-time log stream with filtering capabilities"
     },
     {
       "datasource": {
@@ -354,7 +237,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "error"
+              "options": "Error"
             },
             "properties": [
               {
@@ -369,7 +252,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "warn"
+              "options": "Warn"
             },
             "properties": [
               {
@@ -384,7 +267,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "info"
+              "options": "Info"
             },
             "properties": [
               {
@@ -399,7 +282,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "debug"
+              "options": "Debug"
             },
             "properties": [
               {
@@ -416,8 +299,8 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 16,
-        "y": 20
+        "x": 0,
+        "y": 22
       },
       "id": 4,
       "options": {
@@ -453,8 +336,8 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum by (severity) (count_over_time({service_name=\"$service\", environment=\"$environment\"} | json | severity =~ \"$level\" | __error__=\"\" [$__range]))",
-          "legendFormat": "{{severity}}",
+          "expr": "sum by (level) (count_over_time({service_name=\"$service\", environment=~\"$environment\", level=~\"$level\"} [$__range]))",
+          "legendFormat": "{{level}}",
           "queryType": "instant",
           "refId": "A"
         }
@@ -473,26 +356,64 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
-            "lineWidth": 1,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 22
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "count_over_time({service_name=\"$service\", environment=~\"$environment\"} [$__range])",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Logs",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
           },
           "mappings": [],
           "thresholds": {
@@ -503,49 +424,34 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 100
-              },
-              {
                 "color": "red",
-                "value": 500
+                "value": 1
               }
             ]
-          },
-          "unit": "ms"
+          }
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 28
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 22
       },
-      "id": 5,
+      "id": 6,
       "options": {
-        "barRadius": 0,
-        "barWidth": 0.97,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
         "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "none",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
         },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0
+        "textMode": "auto"
       },
       "targets": [
         {
@@ -554,22 +460,143 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum by (le) (rate({service_name=\"$service\", environment=\"$environment\"} | json | attributes.ElapsedMilliseconds > 0 | unwrap attributes.ElapsedMilliseconds | __error__=\"\" [$__auto]))",
-          "legendFormat": "{{le}}ms",
-          "queryType": "range",
+          "expr": "count_over_time({service_name=\"$service\", environment=~\"$environment\", level=\"Error\"} [$__range])",
+          "queryType": "instant",
           "refId": "A"
         }
       ],
-      "title": "Request Duration Histogram (from logs)",
-      "type": "histogram",
-      "description": "Distribution of request durations extracted from log entries"
+      "title": "Error Count",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 22
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "count_over_time({service_name=\"$service\", environment=~\"$environment\", level=\"Warn\"} [$__range])",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Warning Count",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 26
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "logs/min",
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate({service_name=\"$service\", environment=~\"$environment\"} [$__range])) * 60",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Log Rate",
+      "type": "stat"
     }
   ],
   "refresh": "10s",
   "schemaVersion": 39,
   "tags": [
     "logs",
-    "observability",
+    "otel",
     "applications"
   ],
   "templating": {
@@ -584,14 +611,15 @@
           "type": "loki",
           "uid": "loki"
         },
-        "definition": "label_values(service_name)",
+        "definition": "label_values({log_source=\"otel-collector\"}, service_name)",
         "hide": 0,
         "includeAll": false,
         "label": "Service",
         "multi": false,
         "name": "service",
         "options": [],
-        "query": "label_values(service_name)",
+        "query": "label_values({log_source=\"otel-collector\"}, service_name)",
+        "description": "Application services sending logs via OTEL collector",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
@@ -600,9 +628,9 @@
       },
       {
         "current": {
-          "selected": false,
-          "text": "Development",
-          "value": "Development"
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
         },
         "datasource": {
           "type": "loki",
@@ -610,7 +638,8 @@
         },
         "definition": "label_values({service_name=\"$service\"}, environment)",
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
+        "allValue": ".*",
         "label": "Environment",
         "multi": false,
         "name": "environment",
@@ -636,48 +665,35 @@
           "type": "loki",
           "uid": "loki"
         },
-        "definition": "",
+        "definition": "label_values({service_name=\"$service\"}, level)",
         "hide": 0,
         "includeAll": true,
+        "allValue": ".*",
         "label": "Log Level",
         "multi": true,
         "name": "level",
-        "options": [
-          {
-            "selected": false,
-            "text": "All",
-            "value": "$__all"
-          },
-          {
-            "selected": false,
-            "text": "debug",
-            "value": "debug"
-          },
-          {
-            "selected": false,
-            "text": "info",
-            "value": "info"
-          },
-          {
-            "selected": false,
-            "text": "warn",
-            "value": "warn"
-          },
-          {
-            "selected": false,
-            "text": "error",
-            "value": "error"
-          },
-          {
-            "selected": false,
-            "text": "fatal",
-            "value": "fatal"
-          }
-        ],
-        "query": "debug,info,warn,error,fatal",
-        "queryValue": "",
+        "options": [],
+        "query": "label_values({service_name=\"$service\"}, level)",
+        "refresh": 1,
+        "regex": "",
         "skipUrlSync": false,
-        "type": "custom"
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "description": "Filter logs by field values. Examples: | TraceId=`abc123` or | RequestPath=~`/api/.*` or | Method=`GET` RequestPath=~`/api/events.*`",
+        "hide": 0,
+        "label": "Search Filter",
+        "name": "search",
+        "options": [],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
       }
     ]
   },
@@ -700,6 +716,6 @@
   "timezone": "",
   "title": "Logs Explorer",
   "uid": "logs-explorer-otel",
-  "version": 3,
+  "version": 7,
   "weekStart": ""
 }

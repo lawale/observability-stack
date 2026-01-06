@@ -44,17 +44,12 @@ processors:
         action: upsert
         from_attribute: service.name
 
-  # Resource processor for logs - set resource-level attributes and Loki label hints
+  # Resource processor for logs - set resource-level attributes
   resource/logs:
     attributes:
       - key: log.source
         value: otel-collector
         action: upsert
-      # Tell Loki exporter which resource attributes to use as labels
-      # Note: service.name becomes service_name in Loki (dots converted to underscores)
-      - key: loki.resource.labels
-        value: environment, service.name
-        action: insert
 
 exporters:
   # Tempo exporter for traces
@@ -63,14 +58,11 @@ exporters:
     tls:
       insecure: true
 
-  # Loki exporter for logs
-  loki:
-    endpoint: http://loki:3100/loki/api/v1/push
-    default_labels_enabled:
-      exporter: false
-      job: false
-      instance: false
-      level: true
+  # Loki exporter for logs - using native OTLP ingestion (Loki 3.0+)
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
 
   # Prometheus exporter for metrics
   prometheusremotewrite:
@@ -113,11 +105,11 @@ service:
       processors: [memory_limiter, batch, resource]
       exporters: [prometheusremotewrite, debug]
 
-    # Logs pipeline
+    # Logs pipeline - using native OTLP ingestion to Loki
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource/logs]
-      exporters: [loki, debug]
+      exporters: [otlphttp/loki, debug]
 
   telemetry:
     logs:
