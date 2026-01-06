@@ -1,0 +1,53 @@
+# Environment files with secrets
+.env
+.env.local
+.env.production
+.env.staging
+.env.development
+
+# Docker volumes data
+grafana-storage/
+prometheus-storage/
+loki-storage/
+tempo-storage/
+postgres-glitchtip/
+redis-autolog/
+alertmanager-storage/
+caddy-data/
+caddy-config/
+
+# Grafana generated files
+grafana/provisioning/datasources/*.db
+grafana/provisioning/notifiers/*.db
+
+*.MD
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup
+
+# Temporary files
+tmp/
+temp/
+
+# Caddy SSL certificates and config
+caddy/data/
+caddy/config/
+
+# Build artifacts
+autolog-service/autolog-service
+autolog-service/*.exe

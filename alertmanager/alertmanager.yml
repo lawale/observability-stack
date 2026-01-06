@@ -1,0 +1,110 @@
+global:
+  resolve_timeout: 5m
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/*.tmpl'
+
+route:
+  # Default receiver
+  receiver: 'default'
+  # Group alerts by these labels
+  group_by: ['alertname', 'cluster', 'service', 'environment']
+  # Wait time before sending initial notification
+  group_wait: 10s
+  # Wait time before sending notifications about new alerts in same group
+  group_interval: 10s
+  # Wait time before resending notification
+  repeat_interval: 12h
+
+  # Route for critical alerts
+  routes:
+    - match:
+        severity: critical
+      receiver: critical-alerts
+      continue: true
+
+    # Route for auto-logging alerts
+    - match:
+        autolog: "true"
+      receiver: autolog-webhook
+      continue: false
+
+    # Route for application alerts
+    - match:
+        category: application
+      receiver: application-alerts
+      continue: true
+
+    # Route for infrastructure alerts
+    - match:
+        category: infrastructure
+      receiver: infrastructure-alerts
+      continue: true
+
+receivers:
+  # Default receiver - logs to console
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  # Critical alerts - multiple notification channels
+  - name: 'critical-alerts'
+    # Slack example (configure your webhook URL)
+    # slack_configs:
+    #   - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+    #     channel: '#critical-alerts'
+    #     title: 'Critical Alert: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+    # Email example
+    # email_configs:
+    #   - to: 'oncall@yourcompany.com'
+    #     from: 'alertmanager@yourcompany.com'
+    #     smarthost: 'smtp.gmail.com:587'
+    #     auth_username: 'your-email@gmail.com'
+    #     auth_password: 'your-app-password'
+    #     headers:
+    #       Subject: 'CRITICAL: {{ .GroupLabels.alertname }}'
+
+    # Webhook for custom integrations
+    webhook_configs:
+      - url: 'http://autolog-service:5000/webhook/critical'
+        send_resolved: true
+
+  # Auto-logging webhook - triggers verbose logging
+  - name: 'autolog-webhook'
+    webhook_configs:
+      - url: 'http://autolog-service:5000/webhook/autolog'
+        send_resolved: false
+
+  # Application alerts
+  - name: 'application-alerts'
+    # Configure your notification channels here
+    webhook_configs:
+      - url: 'http://autolog-service:5000/webhook/application'
+        send_resolved: true
+
+  # Infrastructure alerts
+  - name: 'infrastructure-alerts'
+    webhook_configs:
+      - url: 'http://autolog-service:5000/webhook/infrastructure'
+        send_resolved: true
+
+# Inhibition rules - suppress alerts when other alerts are firing
+inhibit_rules:
+  # Inhibit warning if critical is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
+
+  # Don't alert about app being down if entire cluster is down
+  - source_match:
+      category: 'infrastructure'
+      severity: 'critical'
+    target_match:
+      category: 'application'
+    equal: ['cluster']

@@ -1,0 +1,52 @@
+groups:
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Observability stack component down
+      - alert: ObservabilityComponentDown
+        expr: up{job=~"prometheus|grafana|loki|tempo|otel-collector"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Observability component {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been unreachable for more than 2 minutes"
+
+      # Prometheus storage running out
+      - alert: PrometheusStorageNearFull
+        expr: |
+          (
+            prometheus_tsdb_storage_blocks_bytes
+            /
+            (prometheus_tsdb_storage_blocks_bytes + prometheus_tsdb_wal_storage_size_bytes)
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Prometheus storage is nearly full"
+          description: "Prometheus storage usage is at {{ $value | humanizePercentage }}"
+
+      # Loki ingestion rate high
+      - alert: LokiHighIngestionRate
+        expr: rate(loki_ingester_bytes_received_total[5m]) > 10000000
+        for: 10m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Loki is receiving logs at a very high rate"
+          description: "Loki ingestion rate is {{ $value | humanize }}B/s"
+
+      # Tempo trace ingestion failures
+      - alert: TempoIngestionFailures
+        expr: rate(tempo_distributor_spans_received_total{status="error"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Tempo is experiencing trace ingestion failures"
+          description: "{{ $value }} traces failed to ingest per second"

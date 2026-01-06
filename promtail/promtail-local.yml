@@ -1,0 +1,60 @@
+# Promtail configuration for Observability Droplet
+# This only collects logs from the observability stack itself
+# Application logs come via OTLP or separate Promtail instances on app droplets
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: info
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Observability stack containers only
+  - job_name: observability-stack
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        # Only collect from containers on this droplet
+        filters:
+          - name: network
+            values: ["observability_observability"]
+
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service'
+
+      # Tag as observability infrastructure
+      - replacement: 'infrastructure'
+        target_label: 'app'
+
+      - replacement: 'observability'
+        target_label: 'environment'
+
+    pipeline_stages:
+      # Parse JSON logs if present
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            logger: logger
+
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+      - labels:
+          level:
+          logger:
+
+      - output:
+          source: message

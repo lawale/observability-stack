@@ -1,0 +1,109 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'observability'
+    replica: 'prometheus-1'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Load rules
+rule_files:
+  - "/etc/prometheus/alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          environment: 'observability'
+
+  # Grafana metrics
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          environment: 'observability'
+
+  # Loki metrics
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+        labels:
+          environment: 'observability'
+
+  # Tempo metrics
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200']
+        labels:
+          environment: 'observability'
+
+  # OTEL Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+        labels:
+          environment: 'observability'
+
+  # Auto-logging service metrics
+  - job_name: 'autolog-service'
+    static_configs:
+      - targets: ['autolog-service:5000']
+        labels:
+          environment: 'observability'
+
+  # Docker daemon metrics (if exposed)
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['host.docker.internal:9323']
+        labels:
+          environment: 'infrastructure'
+
+  # ==================== APPLICATION METRICS ====================
+
+  # Jaiye Service - Production
+  - job_name: 'jaiye-production'
+    static_configs:
+      - targets: []  # Add your Jaiye production endpoints here
+        labels:
+          app: 'jaiye'
+          environment: 'production'
+    # If using service discovery, uncomment and configure:
+    # dns_sd_configs:
+    #   - names:
+    #       - 'jaiye-production.local'
+    #     type: 'A'
+    #     port: 80
+
+  # Jaiye Service - Staging
+  - job_name: 'jaiye-staging'
+    static_configs:
+      - targets: []  # Add your Jaiye staging endpoints here
+        labels:
+          app: 'jaiye'
+          environment: 'staging'
+
+  # Jaiye Service - Development
+  - job_name: 'jaiye-development'
+    static_configs:
+      - targets: []  # Add your Jaiye development endpoints here
+        labels:
+          app: 'jaiye'
+          environment: 'development'
+
+  # EstateVault Services - Template for multiple services
+  # Add similar configurations for your other services
+  # - job_name: 'estatevault-admin-production'
+  #   static_configs:
+  #     - targets: []
+  #       labels:
+  #         app: 'estatevault-admin'
+  #         environment: 'production'

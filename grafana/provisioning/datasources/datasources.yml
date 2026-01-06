@@ -1,0 +1,75 @@
+apiVersion: 1
+
+datasources:
+  # Prometheus - Metrics
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST
+
+  # Loki - Logs
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # Extract trace ID from logs and link to Tempo
+        - datasourceUid: tempo
+          matcherRegex: "(?:trace_?[iI]d|traceId)[\":]\\s*[\":]?([0-9a-f]{32})"
+          name: TraceID
+          url: '$${__value.raw}'
+          urlDisplayLabel: 'View Trace'
+
+  # Tempo - Traces
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        # Link from traces to logs in Loki
+        datasourceUid: loki
+        tags: ['app', 'environment']
+        mappedTags: [{ key: 'service.name', value: 'app' }]
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '-1m'
+        spanEndTimeShift: '1m'
+        filterByTraceID: true
+        filterBySpanID: false
+      tracesToMetrics:
+        # Link from traces to metrics in Prometheus
+        datasourceUid: prometheus
+        tags: [{ key: 'service.name', value: 'app' }, { key: 'deployment.environment', value: 'environment' }]
+        queries:
+          - name: 'Request Rate'
+            query: 'sum(rate(http_server_requests_total{app="$${__span.tags.app}"}[5m]))'
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: loki
+
+  # Redis - For Auto-logging state (optional)
+  - name: Redis
+    type: redis-datasource
+    access: proxy
+    url: redis://redis-autolog:6379
+    editable: true
+    jsonData:
+      client: standalone

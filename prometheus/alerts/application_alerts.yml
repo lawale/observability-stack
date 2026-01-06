@@ -1,0 +1,106 @@
+groups:
+  - name: application_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_server_requests_total{status=~"5.."}[5m])
+            /
+            rate(http_server_requests_total[5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High error rate detected for {{ $labels.app }} in {{ $labels.environment }}"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Very high error rate (critical)
+      - alert: CriticalErrorRate
+        expr: |
+          (
+            rate(http_server_requests_total{status=~"5.."}[5m])
+            /
+            rate(http_server_requests_total[5m])
+          ) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          category: application
+        annotations:
+          summary: "CRITICAL: Very high error rate for {{ $labels.app }} in {{ $labels.environment }}"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # Slow response time
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_server_request_duration_seconds_bucket[5m])
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Slow response times for {{ $labels.app }} in {{ $labels.environment }}"
+          description: "95th percentile response time is {{ $value }}s (threshold: 2s)"
+
+      # Application down
+      - alert: ApplicationDown
+        expr: up{job=~"jaiye-.*|estatevault-.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Application {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been down for more than 2 minutes"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            process_working_set_bytes
+            /
+            process_physical_memory_bytes
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High memory usage for {{ $labels.app }} in {{ $labels.environment }}"
+          description: "Memory usage is {{ $value | humanizePercentage }} of available memory"
+
+      # Database connection pool exhaustion
+      - alert: DatabaseConnectionPoolNearExhaustion
+        expr: |
+          (
+            database_connections_active
+            /
+            database_connections_max
+          ) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Database connection pool near exhaustion for {{ $labels.app }}"
+          description: "{{ $value | humanizePercentage }} of database connections are in use"
+
+      # Repeated errors (triggers auto-logging)
+      - alert: RepeatedErrors
+        expr: |
+          increase(http_server_requests_total{status=~"5.."}[5m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+          category: application
+          autolog: "true"
+        annotations:
+          summary: "Repeated errors detected for {{ $labels.app }} - Auto-logging triggered"
+          description: "{{ $value }} errors in the last 5 minutes for endpoint {{ $labels.endpoint }}"
+          autolog_trigger: "true"

@@ -1,0 +1,265 @@
+# Example docker-compose.yml for Production Application Droplet
+#
+# Deploy this on your production droplet that runs your applications.
+# This connects to the observability droplet via private network.
+#
+# Setup:
+# 1. Copy this to your production droplet
+# 2. Update OBSERVABILITY_IP with your observability droplet's private IP
+# 3. Update application images and configurations
+# 4. Create .env file with secrets
+# 5. Run: docker compose up -d
+
+version: '3.8'
+
+services:
+  # ==================== JAIYE API ====================
+  jaiye-api:
+    build:
+      context: ./jaiye-api
+      dockerfile: Dockerfile
+    container_name: jaiye-api-production
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      # Application Environment
+      - ASPNETCORE_ENVIRONMENT=Production
+      - CONNECTION_STRING=${JAIYE_DB_CONNECTION}
+      - REDIS_CONNECTION_STRING=${REDIS_CONNECTION}
+
+      # Observability Configuration
+      # IMPORTANT: Use private IP of observability droplet
+      - SENTRY_DSN=${JAIYE_SENTRY_DSN}
+      - Observability__Endpoint=http://10.0.1.10:4317  # Replace with your observability droplet private IP
+      - AutoLog__ServiceUrl=http://10.0.1.10:5000      # Replace with your observability droplet private IP
+      - AutoLog__AppName=jaiye
+
+      # JWT Configuration
+      - Jwt__Secret=${JWT_SECRET}
+      - Jwt__ValidIssuer=${JWT_ISSUER}
+      - Jwt__ValidAudience=${JWT_AUDIENCE}
+
+      # External Services
+      - Payment__PaystackSK=${PAYSTACK_SECRET_KEY}
+      - Storages__Cloudinary__CloudName=${CLOUDINARY_CLOUD_NAME}
+      - Storages__Cloudinary__ApiKey=${CLOUDINARY_API_KEY}
+      - Storages__Cloudinary__SecretKey=${CLOUDINARY_SECRET_KEY}
+
+    # Docker labels for Promtail (if you're running Promtail on app droplet)
+    labels:
+      - "app=jaiye"
+      - "environment=production"
+      - "service=jaiye-api"
+      - "version=${JAIYE_VERSION:-latest}"
+
+    depends_on:
+      - jaiye-db
+      - jaiye-redis
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ==================== JAIYE DATABASE ====================
+  jaiye-db:
+    image: postgres:16
+    container_name: jaiye-db-production
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jaiye_production
+      POSTGRES_USER: ${JAIYE_DB_USER}
+      POSTGRES_PASSWORD: ${JAIYE_DB_PASSWORD}
+      # Performance tuning for production
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+      POSTGRES_MAX_CONNECTIONS: 100
+    volumes:
+      - jaiye-db-data:/var/lib/postgresql/data
+      - ./backups:/backups  # For database backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${JAIYE_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== REDIS ====================
+  jaiye-redis:
+    image: redis:7.4-alpine
+    container_name: jaiye-redis-production
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - jaiye-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== ESTATEVAULT ADMIN API ====================
+  estatevault-admin:
+    build:
+      context: ./Rea-Backend/EstateVault.Admin.Api
+      dockerfile: Dockerfile
+    container_name: estatevault-admin-production
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - CONNECTION_STRING=${ESTATEVAULT_ADMIN_DB_CONNECTION}
+
+      # Observability
+      - SENTRY_DSN=${ESTATEVAULT_ADMIN_SENTRY_DSN}
+      - Observability__Endpoint=http://10.0.1.10:4317
+      - AutoLog__ServiceUrl=http://10.0.1.10:5000
+      - AutoLog__AppName=estatevault-admin
+
+    labels:
+      - "app=estatevault-admin"
+      - "environment=production"
+      - "service=estatevault-admin-api"
+
+    depends_on:
+      - estatevault-db
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==================== ESTATEVAULT TENANT API ====================
+  estatevault-tenant:
+    build:
+      context: ./Rea-Backend/EstateVault.Tenant.Api
+      dockerfile: Dockerfile
+    container_name: estatevault-tenant-production
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - CONNECTION_STRING=${ESTATEVAULT_TENANT_DB_CONNECTION}
+
+      # Observability
+      - SENTRY_DSN=${ESTATEVAULT_TENANT_SENTRY_DSN}
+      - Observability__Endpoint=http://10.0.1.10:4317
+      - AutoLog__ServiceUrl=http://10.0.1.10:5000
+      - AutoLog__AppName=estatevault-tenant
+
+    labels:
+      - "app=estatevault-tenant"
+      - "environment=production"
+      - "service=estatevault-tenant-api"
+
+    depends_on:
+      - estatevault-db
+
+  # ==================== ESTATEVAULT LANDLORD API ====================
+  estatevault-landlord:
+    build:
+      context: ./Rea-Backend/EstateVault.LandLord.Api
+      dockerfile: Dockerfile
+    container_name: estatevault-landlord-production
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - CONNECTION_STRING=${ESTATEVAULT_LANDLORD_DB_CONNECTION}
+
+      # Observability
+      - SENTRY_DSN=${ESTATEVAULT_LANDLORD_SENTRY_DSN}
+      - Observability__Endpoint=http://10.0.1.10:4317
+      - AutoLog__ServiceUrl=http://10.0.1.10:5000
+      - AutoLog__AppName=estatevault-landlord
+
+    labels:
+      - "app=estatevault-landlord"
+      - "environment=production"
+      - "service=estatevault-landlord-api"
+
+    depends_on:
+      - estatevault-db
+
+  # ==================== ESTATEVAULT DATABASE ====================
+  estatevault-db:
+    image: postgres:16
+    container_name: estatevault-db-production
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: estatevault_production
+      POSTGRES_USER: ${ESTATEVAULT_DB_USER}
+      POSTGRES_PASSWORD: ${ESTATEVAULT_DB_PASSWORD}
+    volumes:
+      - estatevault-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ESTATEVAULT_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== OPTIONAL: PROMTAIL (for log shipping) ====================
+  # Uncomment if you want to ship logs via Promtail instead of OTLP
+  # promtail:
+  #   image: grafana/promtail:3.3.2
+  #   container_name: promtail-production
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /var/lib/docker/containers:/var/lib/docker/containers:ro
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - ./promtail-config.yml:/etc/promtail/promtail.yml
+  #   command: -config.file=/etc/promtail/promtail.yml
+
+volumes:
+  jaiye-db-data:
+  jaiye-redis-data:
+  estatevault-db-data:
+
+# ==================== NOTES ====================
+#
+# Environment Variables (.env file):
+#
+# # Database
+# JAIYE_DB_CONNECTION=Host=jaiye-db;Database=jaiye_production;Username=jaiye_user;Password=xxx
+# JAIYE_DB_USER=jaiye_user
+# JAIYE_DB_PASSWORD=xxx
+#
+# # Redis
+# REDIS_CONNECTION=jaiye-redis:6379
+# REDIS_PASSWORD=xxx
+#
+# # Sentry (get from https://sentry.yourdomain.com)
+# JAIYE_SENTRY_DSN=https://xxx@sentry.yourdomain.com/1
+# ESTATEVAULT_ADMIN_SENTRY_DSN=https://yyy@sentry.yourdomain.com/2
+# ESTATEVAULT_TENANT_SENTRY_DSN=https://zzz@sentry.yourdomain.com/3
+# ESTATEVAULT_LANDLORD_SENTRY_DSN=https://aaa@sentry.yourdomain.com/4
+#
+# # Application
+# JWT_SECRET=xxx
+# JWT_ISSUER=https://yourapp.com
+# JWT_AUDIENCE=https://yourapp.com
+#
+# # External Services
+# PAYSTACK_SECRET_KEY=sk_live_xxx
+# CLOUDINARY_CLOUD_NAME=xxx
+# CLOUDINARY_API_KEY=xxx
+# CLOUDINARY_SECRET_KEY=xxx
+#
+# # Versions
+# JAIYE_VERSION=1.0.0
+#
+# Deployment:
+#
+# 1. SSH to production droplet
+# 2. Clone/upload your application code
+# 3. Create .env file with above variables
+# 4. Update Observability IPs (10.0.1.10) with your actual private IP
+# 5. Run: docker compose up -d --build
+# 6. Verify in Grafana: logs, traces, metrics appear
+# 7. Verify in Sentry: errors are tracked

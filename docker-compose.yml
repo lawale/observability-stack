@@ -1,0 +1,361 @@
+# Docker Compose for Observability Droplet (Multi-Droplet Setup)
+#
+# This file is optimized for running on a dedicated observability droplet
+# that receives telemetry from applications on separate droplets.
+#
+# Key differences from single-host setup:
+# - Services listen on private network interface for remote connections
+# - Grafana/Sentry accessed via Caddy reverse proxy with automatic HTTPS
+# - Optimized for network security and performance
+
+version: '3.8'
+
+networks:
+  observability:
+    driver: bridge
+
+volumes:
+  grafana-storage:
+  prometheus-storage:
+  loki-storage:
+  tempo-storage:
+  postgres-glitchtip:
+  alertmanager-storage:
+  redis-autolog:
+  caddy-data:
+  caddy-config:
+
+services:
+  # ==================== GRAFANA STACK ====================
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: grafana
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,redis-datasource
+      - GF_SENTRY_DSN=${GRAFANA_SENTRY_DSN:-}
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - observability
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: prometheus
+    restart: unless-stopped
+    user: "nobody"
+    expose:
+      - "9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-remote-write-receiver'
+      - '--enable-feature=native-histograms'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus-storage:/prometheus
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: loki
+    restart: unless-stopped
+    expose:
+      - "3100"
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml
+      - loki-storage:/loki
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tempo:
+    image: grafana/tempo:2.7.2
+    container_name: tempo
+    restart: unless-stopped
+    user: "10001"
+    command: [ "-config.file=/etc/tempo/tempo.yml" ]
+    expose:
+      - "3200"
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-storage:/tmp/tempo
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Promtail only for observability stack logs
+  # Application logs come via OTLP or separate Promtail on app droplets
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./promtail/promtail-local.yml:/etc/promtail/promtail.yml
+    command: -config.file=/etc/promtail/promtail.yml
+    networks:
+      - observability
+    depends_on:
+      - loki
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-storage:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== GLITCHTIP STACK ====================
+
+  glitchtip-postgres:
+    image: postgres:16
+    container_name: glitchtip-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD:-glitchtip}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - postgres-glitchtip:/var/lib/postgresql/data
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-redis:
+    image: redis:7.4-alpine
+    container_name: glitchtip-redis
+    restart: unless-stopped
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip:
+    image: glitchtip/glitchtip:v4.1
+    container_name: glitchtip
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:-glitchtip}@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+      PORT: 8000
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+      GLITCHTIP_DOMAIN: https://glitchtip.${DOMAIN}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
+      CELERY_WORKER_AUTOSCALE: "1,3"
+      CELERY_WORKER_MAX_TASKS_PER_CHILD: "10000"
+    networks:
+      - observability
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:v4.1
+    container_name: glitchtip-worker
+    restart: unless-stopped
+    command: ./bin/run-celery-with-beat.sh
+    environment:
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:-glitchtip}@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+      GLITCHTIP_DOMAIN: https://glitchtip.${DOMAIN}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
+    networks:
+      - observability
+    depends_on:
+      glitchtip:
+        condition: service_healthy
+
+  # ==================== AUTO-LOGGING SERVICE ====================
+
+  redis-autolog:
+    image: redis:7.4-alpine
+    container_name: redis-autolog
+    restart: unless-stopped
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  autolog-service:
+    build:
+      context: ./autolog-service
+      dockerfile: Dockerfile
+    container_name: autolog-service
+    restart: unless-stopped
+    expose:
+      - "5000"
+    environment:
+      - REDIS_HOST=redis-autolog
+      - REDIS_PORT=6379
+      - SENTRY_WEBHOOK_SECRET=${AUTOLOG_WEBHOOK_SECRET}
+      - LOG_LEVEL=${AUTOLOG_LOG_LEVEL:-INFO}
+      - ERROR_THRESHOLD_COUNT=${ERROR_THRESHOLD_COUNT:-10}
+      - ERROR_THRESHOLD_WINDOW_MINUTES=${ERROR_THRESHOLD_WINDOW_MINUTES:-5}
+      - AUTOLOG_TTL_MINUTES=${AUTOLOG_TTL_MINUTES:-30}
+    networks:
+      - observability
+    depends_on:
+      redis-autolog:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== OTEL COLLECTOR ====================
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver - apps send telemetry here
+      - "4318:4318"   # OTLP HTTP receiver - apps send telemetry here
+    expose:
+      - "8888"
+      - "13133"
+    networks:
+      - observability
+    depends_on:
+      - tempo
+      - loki
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== CADDY REVERSE PROXY ====================
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - observability
+    depends_on:
+      - grafana
+      - glitchtip
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2019/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ==================== NOTES ====================
+#
+# Port Binding Strategy:
+#
+# 1. Public-facing UIs (via Caddy):
+#    - Grafana: expose 3000 (Caddy proxies to grafana.yourdomain.com)
+#    - Sentry: expose 9000 (Caddy proxies to sentry.yourdomain.com)
+#
+# 2. Telemetry receivers (from app droplets via VPC):
+#    - OTEL Collector gRPC: 0.0.0.0:4317 (apps send here)
+#    - OTEL Collector HTTP: 0.0.0.0:4318 (apps send here)
+#    - Loki: 0.0.0.0:3100 (if using direct log shipping)
+#    - Auto-Log API: 0.0.0.0:5000 (apps query here)
+#
+# 3. Internal only:
+#    - Prometheus: 127.0.0.1:9090
+#    - Tempo: 127.0.0.1:3200
+#    - AlertManager: 127.0.0.1:9093
+#
+# For production, replace 0.0.0.0 with your droplet's private IP:
+# - "10.0.1.10:4317:4317" instead of "4317:4317"
+# - "10.0.1.10:4318:4318" instead of "4318:4318"
+# - etc.
+#
+# This ensures services only listen on the private network interface.

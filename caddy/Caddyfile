@@ -1,0 +1,76 @@
+# Caddyfile for Observability Stack
+# Automatic HTTPS with Let's Encrypt
+
+# Grafana
+grafana.{$DOMAIN} {
+    reverse_proxy grafana:3000 {
+        # WebSocket support for live updates
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/grafana.log
+        format json
+    }
+}
+
+# GlitchTip (Sentry-compatible error tracking)
+glitchtip.{$DOMAIN} {
+    reverse_proxy glitchtip:8000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Increase timeouts for GlitchTip
+        transport http {
+            read_timeout 300s
+            dial_timeout 75s
+        }
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/glitchtip.log
+        format json
+    }
+}
+
+# Optional: Prometheus (if you want external access)
+# prometheus.{$DOMAIN} {
+#     reverse_proxy prometheus:9090
+#
+#     # Basic auth (recommended for prometheus)
+#     basicauth {
+#         admin $2a$14$... # Generate with: caddy hash-password
+#     }
+# }
+
+# Optional: AlertManager (if you want external access)
+# alerts.{$DOMAIN} {
+#     reverse_proxy alertmanager:9093
+#
+#     basicauth {
+#         admin $2a$14$...
+#     }
+# }
