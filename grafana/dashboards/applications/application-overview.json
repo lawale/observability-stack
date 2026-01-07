@@ -19,7 +19,44 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Metrics Explorer",
+      "tooltip": "View detailed metrics",
+      "type": "link",
+      "url": "/d/metrics-explorer-otel/metrics-explorer"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Logs Explorer",
+      "tooltip": "View detailed logs",
+      "type": "link",
+      "url": "/d/logs-explorer-otel/logs-explorer"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Traces Explorer",
+      "tooltip": "View traces and service map",
+      "type": "link",
+      "url": "/d/traces-explorer/traces-explorer"
+    }
+  ],
   "liveNow": false,
   "panels": [
     {
@@ -82,7 +119,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "up{app=\"$app\", environment=\"$environment\"}",
+          "editorMode": "code",
+          "expr": "count(http_server_request_duration_count{service_name=~\"$service\", deployment_environment=~\"$environment\"}) > 0 or vector(0)",
           "refId": "A"
         }
       ],
@@ -169,8 +207,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(http_server_requests_total{app=\"$app\", environment=\"$environment\"}[5m])) by (status)",
-          "legendFormat": "{{status}}",
+          "editorMode": "code",
+          "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_count{service_name=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "{{http_response_status_code}}",
           "refId": "A"
         }
       ],
@@ -237,7 +276,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(http_server_requests_total{app=\"$app\", environment=\"$environment\", status=~\"5..\"}[5m])) / sum(rate(http_server_requests_total{app=\"$app\", environment=\"$environment\"}[5m]))",
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_request_duration_count{service_name=~\"$service\", deployment_environment=~\"$environment\", http_response_status_code=~\"5..\"}[$__rate_interval])) / sum(rate(http_server_request_duration_count{service_name=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval]))",
           "refId": "A"
         }
       ],
@@ -304,7 +344,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{app=\"$app\", environment=\"$environment\"}[5m])) by (le))",
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_bucket{service_name=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval])))",
           "refId": "A"
         }
       ],
@@ -367,11 +408,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count(count by (endpoint) (autolog_active_count{app=\"$app\", environment=\"$environment\"} > 0))",
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_request_duration_count{service_name=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval]))",
           "refId": "A"
         }
       ],
-      "title": "Auto-Logging Active",
+      "title": "Total Request Rate",
       "type": "stat"
     },
     {
@@ -402,7 +444,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service_name=\"$app\"}",
+          "editorMode": "code",
+          "expr": "{service_name=~\"$service\", deployment_environment=~\"$environment\"}",
           "refId": "A"
         }
       ],
@@ -414,6 +457,50 @@
         "type": "tempo",
         "uid": "tempo"
       },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trace ID"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View Trace",
+                    "url": "/explore?left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__data.fields.traceID}\",\"queryType\":\"traceql\"}]}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "gridPos": {
         "h": 12,
         "w": 10,
@@ -422,11 +509,20 @@
       },
       "id": 7,
       "options": {
-        "query": "{app=\"$app\", environment=\"$environment\"}",
-        "search": {
-          "query": "",
-          "queryType": "traceql"
-        }
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Start time"
+          }
+        ]
       },
       "pluginVersion": "11.4.0",
       "targets": [
@@ -436,13 +532,32 @@
             "uid": "tempo"
           },
           "limit": 20,
-          "query": "{app=\"$app\" && environment=\"$environment\"}",
+          "query": "{ resource.service.name=\"$service\" }",
           "queryType": "traceql",
-          "refId": "A"
+          "refId": "A",
+          "tableType": "traces"
         }
       ],
       "title": "Recent Traces",
-      "type": "traces"
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "spanID": true,
+              "spanSet": true
+            },
+            "renameByName": {
+              "duration": "Duration",
+              "name": "Operation",
+              "traceID": "Trace ID",
+              "traceName": "Name",
+              "traceService": "Service"
+            }
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "datasource": {
@@ -472,7 +587,8 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service_name=\"$app\"} |~ \"(?i)(error|exception|fail)\"",
+          "editorMode": "code",
+          "expr": "{service_name=~\"$service\", deployment_environment=~\"$environment\"} |~ \"(?i)(error|exception|fail)\"",
           "refId": "A"
         }
       ],
@@ -532,13 +648,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "topk(10, sum by (endpoint) (rate(http_server_requests_total{app=\"$app\", environment=\"$environment\"}[5m])))",
+          "editorMode": "code",
+          "expr": "topk(10, sum by (http_route) (rate(http_server_request_duration_count{service_name=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval])))",
           "format": "table",
           "instant": true,
           "refId": "A"
         }
       ],
-      "title": "Top 10 Endpoints by Request Rate",
+      "title": "Top 10 Routes by Request Rate",
       "type": "table"
     }
   ],
@@ -554,18 +671,22 @@
           "value": ""
         },
         "datasource": {
-          "type": "loki",
-          "uid": "loki"
+          "type": "prometheus",
+          "uid": "prometheus"
         },
-        "definition": "label_values(service_name)",
+        "definition": "label_values(http_server_request_duration_bucket, service_name)",
         "hide": 0,
         "includeAll": false,
-        "label": "Application",
+        "label": "Service",
         "multi": false,
-        "name": "app",
+        "name": "service",
         "options": [],
-        "query": "label_values(service_name)",
-        "refresh": 1,
+        "query": {
+          "qryType": 1,
+          "query": "label_values(http_server_request_duration_bucket, service_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
@@ -574,14 +695,14 @@
       {
         "current": {
           "selected": false,
-          "text": "production",
-          "value": "production"
+          "text": "",
+          "value": ""
         },
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(up{app=\"$app\"}, environment)",
+        "definition": "label_values(http_server_request_duration_bucket{service_name=~\"$service\"}, deployment_environment)",
         "hide": 0,
         "includeAll": false,
         "label": "Environment",
@@ -589,22 +710,33 @@
         "name": "environment",
         "options": [],
         "query": {
-          "query": "label_values(up{app=\"$app\"}, environment)",
+          "qryType": 1,
+          "query": "label_values(http_server_request_duration_bucket{service_name=~\"$service\"}, deployment_environment)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 0,
+        "sort": 1,
         "type": "query"
       }
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
   "timezone": "",
   "title": "Application Overview",
   "uid": "application-overview",
