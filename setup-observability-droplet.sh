@@ -177,13 +177,13 @@ echo "🔧 Fixing file permissions..."
 # All config files must be readable (644) for non-root containers
 chmod 644 prometheus/*.yml prometheus/alerts/*.yml loki/loki.yml tempo/tempo.yml \
     promtail/*.yml alertmanager/alertmanager.yml otel-collector/otel-collector-config.yml \
-    caddy/Caddyfile grafana/provisioning/datasources/*.yml \
+    caddy/Caddyfile grafana/provisioning/datasources/*.yml grafana/provisioning/alerting/*.yml \
     grafana/provisioning/dashboards/*.yml grafana/dashboards/applications/*.json \
     grafana/dashboards/infrastructure/*.json grafana/dashboards/default/*.json 2>/dev/null || true
 # All directories must be accessible (755)
 chmod 755 prometheus prometheus/alerts loki tempo promtail alertmanager \
     otel-collector caddy grafana grafana/provisioning grafana/provisioning/datasources \
-    grafana/provisioning/dashboards grafana/dashboards grafana/dashboards/applications \
+    grafana/provisioning/dashboards grafana/provisioning/alerting grafana/dashboards grafana/dashboards/applications \
     grafana/dashboards/infrastructure grafana/dashboards/default 2>/dev/null || true
 echo "✅ File permissions fixed"
 

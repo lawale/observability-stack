@@ -452,12 +452,14 @@ func (h *Handler) AlertManagerWebhook(w http.ResponseWriter, r *http.Request) {
 
 	webhookRequests.WithLabelValues("alertmanager", webhookType).Inc()
 
-	// Process alerts
+	// Process alerts (both firing and resolved)
 	if alerts, ok := data["alerts"].([]interface{}); ok {
 		for _, alert := range alerts {
 			if alertMap, ok := alert.(map[string]interface{}); ok {
-				if status, _ := alertMap["status"].(string); status == "firing" {
-					h.handlePrometheusAlert(r.Context(), alertMap, webhookType)
+				status, _ := alertMap["status"].(string)
+				// Process both firing and resolved alerts
+				if status == "firing" || status == "resolved" {
+					h.handlePrometheusAlert(r.Context(), alertMap, webhookType, status)
 				}
 			}
 		}
@@ -469,27 +471,48 @@ func (h *Handler) AlertManagerWebhook(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) handlePrometheusAlert(ctx context.Context, alert map[string]interface{}, webhookType string) {
+func (h *Handler) handlePrometheusAlert(ctx context.Context, alert map[string]interface{}, webhookType string, status string) {
 	labels, _ := alert["labels"].(map[string]interface{})
 
-	app, _ := labels["app"].(string)
+	// Support both OTEL labels (service_name, deployment_environment) and legacy labels (app, environment)
+	app, _ := labels["service_name"].(string)
+	if app == "" {
+		app, _ = labels["app"].(string)
+	}
 	if app == "" {
 		app = "unknown"
 	}
 
-	environment, _ := labels["environment"].(string)
+	environment, _ := labels["deployment_environment"].(string)
+	if environment == "" {
+		environment, _ = labels["environment"].(string)
+	}
 	if environment == "" {
 		environment = "production"
 	}
 
 	var endpoint *string
-	if ep, ok := labels["endpoint"].(string); ok && ep != "" {
+	// Support both http_route (OTEL) and endpoint (legacy)
+	if ep, ok := labels["http_route"].(string); ok && ep != "" {
+		endpoint = &ep
+	} else if ep, ok := labels["endpoint"].(string); ok && ep != "" {
 		endpoint = &ep
 	}
 
 	alertName, _ := labels["alertname"].(string)
 
-	// Check if this is an auto-log trigger alert
+	// Handle resolved alerts - disable auto-logging
+	if status == "resolved" {
+		if webhookType == "autolog" || labels["autolog"] == "true" {
+			log.Printf("Auto-log alert resolved: %s for %s/%s - disabling auto-logging", alertName, app, environment)
+			if _, err := h.manager.DisableAutoLog(ctx, app, environment, endpoint); err != nil {
+				log.Printf("Error disabling auto-log on resolve: %v", err)
+			}
+		}
+		return
+	}
+
+	// Check if this is an auto-log trigger alert (firing)
 	if webhookType == "autolog" || labels["autolog"] == "true" {
 		log.Printf("Auto-log alert triggered: %s for %s/%s", alertName, app, environment)
 

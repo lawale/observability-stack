@@ -1,0 +1,65 @@
+# Grafana Alerting - Contact Points
+# https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
+apiVersion: 1
+
+contactPoints:
+  # Default contact point - webhook to autolog service
+  - orgId: 1
+    name: default-receiver
+    receivers:
+      - uid: default-webhook
+        type: webhook
+        settings:
+          url: http://autolog-service:5000/webhook/grafana
+          httpMethod: POST
+        disableResolveMessage: false
+
+  # Critical alerts - webhook with higher priority
+  - orgId: 1
+    name: critical-alerts
+    receivers:
+      - uid: critical-webhook
+        type: webhook
+        settings:
+          url: http://autolog-service:5000/webhook/critical
+          httpMethod: POST
+        disableResolveMessage: false
+      # Email for critical alerts (configure SMTP in Grafana settings)
+      # - uid: critical-email
+      #   type: email
+      #   settings:
+      #     addresses: critical-alerts@yourdomain.com
+      #     singleEmail: false
+
+  # Auto-logging webhook - triggers verbose logging in applications
+  - orgId: 1
+    name: autolog-webhook
+    receivers:
+      - uid: autolog-receiver
+        type: webhook
+        settings:
+          url: http://autolog-service:5000/webhook/autolog
+          httpMethod: POST
+        disableResolveMessage: false
+
+  # Application alerts
+  - orgId: 1
+    name: application-alerts
+    receivers:
+      - uid: app-webhook
+        type: webhook
+        settings:
+          url: http://autolog-service:5000/webhook/application
+          httpMethod: POST
+        disableResolveMessage: false
+
+  # Infrastructure alerts
+  - orgId: 1
+    name: infrastructure-alerts
+    receivers:
+      - uid: infra-webhook
+        type: webhook
+        settings:
+          url: http://autolog-service:5000/webhook/infrastructure
+          httpMethod: POST
+        disableResolveMessage: false

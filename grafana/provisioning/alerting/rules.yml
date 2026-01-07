@@ -1,0 +1,577 @@
+# Grafana Alerting - Alert Rules
+# https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
+apiVersion: 1
+
+groups:
+  # Error Alerts - Based on log severity from OTEL
+  - orgId: 1
+    name: error_alerts
+    folder: Provisioned Alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - uid: high-error-rate
+        title: High Error Rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: |
+                sum by (service_name, deployment_environment) (
+                  rate({service_name=~".+"} | json | severity_text=~"ERROR|FATAL" [5m])
+                )
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+        annotations:
+          summary: "High error rate in {{ $labels.service_name }}"
+          description: "{{ $labels.service_name }} in {{ $labels.deployment_environment }} has elevated error rate over the last 5 minutes"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/high-error-rate"
+        noDataState: OK
+        execErrState: Error
+
+      # Fatal error detected - triggers auto-logging
+      - uid: fatal-error-detected
+        title: Fatal Error Detected
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: |
+                count_over_time({service_name=~".+"} | json | severity_text="FATAL" [2m])
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: sum
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+        for: 30s
+        labels:
+          severity: critical
+          team: platform
+          category: application
+          autolog: "true"
+        annotations:
+          summary: "FATAL error in {{ $labels.service_name }} - Auto-logging enabled"
+          description: "Fatal error detected in {{ $labels.service_name }} ({{ $labels.deployment_environment }}). Auto-logging has been triggered."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/fatal-error"
+        noDataState: OK
+        execErrState: Error
+
+      # Sustained high error count - triggers auto-logging
+      - uid: sustained-high-error-count
+        title: Sustained High Error Count
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: |
+                sum by (service_name, deployment_environment) (
+                  count_over_time({service_name=~".+"} | json | severity_text=~"ERROR|FATAL" [15m])
+                )
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: sum
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 100
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+          autolog: "true"
+        annotations:
+          summary: "Sustained high error count in {{ $labels.service_name }}"
+          description: "{{ $labels.service_name }} ({{ $labels.deployment_environment }}) has logged many errors in the last 15 minutes. Auto-logging triggered."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/sustained-errors"
+        noDataState: OK
+        execErrState: Error
+
+      # Database errors
+      - uid: database-errors
+        title: Database Errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: |
+                sum by (service_name, deployment_environment) (
+                  rate({service_name=~".+"} | json | severity_text=~"ERROR|FATAL" |~ "(?i)(database|sql|connection|timeout|deadlock)" [5m])
+                )
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          category: database
+        annotations:
+          summary: "Database errors detected in {{ $labels.service_name }}"
+          description: "{{ $labels.service_name }} ({{ $labels.deployment_environment }}) is experiencing database-related errors"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/database-errors"
+        noDataState: OK
+        execErrState: Error
+
+      # Authentication/Authorization errors
+      - uid: authentication-errors
+        title: Authentication Errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: |
+                sum by (service_name, deployment_environment) (
+                  rate({service_name=~".+"} | json | severity_text=~"ERROR|FATAL" |~ "(?i)(auth|unauthorized|forbidden|401|403)" [5m])
+                )
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: security
+        annotations:
+          summary: "Authentication/authorization errors in {{ $labels.service_name }}"
+          description: "{{ $labels.service_name }} ({{ $labels.deployment_environment }}) is experiencing auth-related errors. This could indicate a security issue."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/auth-errors"
+        noDataState: OK
+        execErrState: Error
+
+      # External service errors
+      - uid: external-service-errors
+        title: External Service Errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: |
+                sum by (service_name, deployment_environment) (
+                  rate({service_name=~".+"} | json | severity_text=~"ERROR|FATAL" |~ "(?i)(external|api|third.party|integration|webhook)" [5m])
+                )
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0.05
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          category: integration
+        annotations:
+          summary: "External service errors in {{ $labels.service_name }}"
+          description: "{{ $labels.service_name }} ({{ $labels.deployment_environment }}) is experiencing errors with external services/APIs"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/external-service-errors"
+        noDataState: OK
+        execErrState: Error
+
+  # Infrastructure Alerts
+  - orgId: 1
+    name: infrastructure_alerts
+    folder: Provisioned Alerts
+    interval: 1m
+    rules:
+      # High CPU usage
+      - uid: high-cpu-usage
+        title: High CPU Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: infrastructure
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage on {{ $labels.instance }} is above 85% for 5 minutes"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/high-cpu"
+        noDataState: OK
+        execErrState: Error
+
+      # High memory usage
+      - uid: high-memory-usage
+        title: High Memory Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 90
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: infrastructure
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage on {{ $labels.instance }} is above 90% for 5 minutes"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/high-memory"
+        noDataState: OK
+        execErrState: Error
+
+      # Disk space low
+      - uid: disk-space-low
+        title: Disk Space Low
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: infrastructure
+        annotations:
+          summary: "Disk space low on {{ $labels.instance }}"
+          description: "Disk usage on {{ $labels.instance }} ({{ $labels.mountpoint }}) is above 85%"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/disk-space"
+        noDataState: OK
+        execErrState: Error
+
+  # Service Health Alerts
+  - orgId: 1
+    name: service_health_alerts
+    folder: Provisioned Alerts
+    interval: 30s
+    rules:
+      # Service down - no logs received
+      - uid: service-down
+        title: Service Down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: |
+                count_over_time({service_name=~".+"} [5m])
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: sum
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          category: application
+        annotations:
+          summary: "Service {{ $labels.service_name }} appears to be down"
+          description: "No logs received from {{ $labels.service_name }} ({{ $labels.deployment_environment }}) for 5 minutes"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/service-down"
+        noDataState: Alerting
+        execErrState: Error
+
+      # High latency from traces
+      - uid: high-latency
+        title: High Request Latency
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{span_kind="SPAN_KIND_SERVER"}[5m])) by (le, service))
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 2000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+        annotations:
+          summary: "High latency for {{ $labels.service }}"
+          description: "P95 latency for {{ $labels.service }} is above 2 seconds"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/high-latency"
+        noDataState: OK
+        execErrState: Error
+
+      # High error rate from traces
+      - uid: high-trace-error-rate
+        title: High Trace Error Rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                sum(rate(traces_spanmetrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (service)
+                /
+                sum(rate(traces_spanmetrics_calls_total[5m])) by (service)
+                * 100
+              queryType: range
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: mean
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+        annotations:
+          summary: "High error rate for {{ $labels.service }}"
+          description: "Error rate for {{ $labels.service }} is above 5%"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/high-error-rate"
+        noDataState: OK
+        execErrState: Error

@@ -1,0 +1,66 @@
+# Grafana Alerting - Notification Policies
+# https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    # Default receiver for unmatched alerts
+    receiver: default-receiver
+    # Group alerts by these labels
+    group_by:
+      - alertname
+      - service_name
+      - deployment_environment
+    # Timing settings
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+
+    # Nested routing rules
+    routes:
+      # Critical severity alerts
+      - receiver: critical-alerts
+        matchers:
+          - severity = critical
+        group_wait: 10s
+        repeat_interval: 1h
+        continue: true
+
+      # Warning severity alerts
+      - receiver: default-receiver
+        matchers:
+          - severity = warning
+        repeat_interval: 12h
+        continue: true
+
+      # Auto-logging alerts - triggers verbose logging
+      - receiver: autolog-webhook
+        matchers:
+          - autolog = true
+        group_wait: 0s
+        repeat_interval: 30m
+        continue: false
+
+      # Application category alerts
+      - receiver: application-alerts
+        matchers:
+          - category = application
+        continue: true
+
+      # Infrastructure category alerts
+      - receiver: infrastructure-alerts
+        matchers:
+          - category = infrastructure
+        continue: true
+
+      # Database alerts
+      - receiver: critical-alerts
+        matchers:
+          - category = database
+        continue: true
+
+      # Security alerts
+      - receiver: critical-alerts
+        matchers:
+          - category = security
+        continue: true
