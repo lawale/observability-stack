@@ -26,6 +26,23 @@ grafana.{$DOMAIN} {
     }
 }
 
+autolog.{$DOMAIN} {
+    reverse_proxy autolog-service:5000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/autolog-service.log
+        format json
+    }
+}
+
+
+
 # Optional: Prometheus (if you want external access)
 # prometheus.{$DOMAIN} {
 #     reverse_proxy prometheus:9090
