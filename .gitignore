@@ -20,8 +20,6 @@ caddy-config/
 grafana/provisioning/datasources/*.db
 grafana/provisioning/notifiers/*.db
 
-*.MD
-
 # Logs
 *.log
 
