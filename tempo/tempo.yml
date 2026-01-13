@@ -26,24 +26,25 @@ compactor:
   compaction:
     block_retention: 720h  # 30 days
 
-metrics_generator:
-  registry:
-    external_labels:
-      source: tempo
-      cluster: observability
-  storage:
-    path: /tmp/tempo/generator/wal
-    remote_write:
-      - url: http://prometheus:9090/api/v1/write
-        send_exemplars: true
-  traces_storage:
-    path: /tmp/tempo/generator/traces
-  processor:
-    span_metrics:
-      # Include these resource attributes as metric labels
-      dimensions:
-        - service.name
-        - deployment.environment
+# metrics_generator disabled - apps already export metrics via OTEL Collector
+# Enabling this causes high memory usage and is redundant when apps are properly instrumented
+# metrics_generator:
+#   registry:
+#     external_labels:
+#       source: tempo
+#       cluster: observability
+#   storage:
+#     path: /tmp/tempo/generator/wal
+#     remote_write:
+#       - url: http://prometheus:9090/api/v1/write
+#         send_exemplars: true
+#   traces_storage:
+#     path: /tmp/tempo/generator/traces
+#   processor:
+#     span_metrics:
+#       dimensions:
+#         - service.name
+#         - deployment.environment
 
 storage:
   trace:
@@ -53,11 +54,11 @@ storage:
     local:
       path: /tmp/tempo/blocks
 
-overrides:
-  defaults:
-    metrics_generator:
-      processors: [service-graphs, span-metrics, local-blocks]
-      generate_native_histograms: both
+# overrides:
+#   defaults:
+#     metrics_generator:
+#       processors: [service-graphs, span-metrics, local-blocks]
+#       generate_native_histograms: both
 
 # Multi-tenancy disabled for simplicity
 multitenancy_enabled: false

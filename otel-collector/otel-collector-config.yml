@@ -76,6 +76,8 @@ exporters:
     # This adds service_name label (service.name becomes service_name)
     resource_to_telemetry_conversion:
       enabled: true
+    # Enable exemplars to link metrics -> traces in Grafana
+    send_metadata: true
 
   # Debug exporter for debugging (replaces deprecated logging exporter)
   debug:
