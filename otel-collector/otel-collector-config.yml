@@ -79,11 +79,12 @@ exporters:
     # Enable exemplars to link metrics -> traces in Grafana
     send_metadata: true
 
-  # Debug exporter for debugging (replaces deprecated logging exporter)
-  debug:
-    verbosity: normal
-    sampling_initial: 5
-    sampling_thereafter: 200
+  # Debug exporter - disabled in production to prevent massive log volume
+  # Uncomment for debugging only
+  # debug:
+  #   verbosity: normal
+  #   sampling_initial: 5
+  #   sampling_thereafter: 200
 
 extensions:
   health_check:
@@ -103,23 +104,23 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource, attributes]
-      exporters: [otlp/tempo, debug]
+      exporters: [otlp/tempo]
 
     # Metrics pipeline
     metrics:
       receivers: [otlp, prometheus]
       processors: [memory_limiter, batch, resource]
-      exporters: [prometheusremotewrite, debug]
+      exporters: [prometheusremotewrite]
 
     # Logs pipeline - using native OTLP ingestion to Loki
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource/logs]
-      exporters: [otlphttp/loki, debug]
+      exporters: [otlphttp/loki]
 
   telemetry:
     logs:
-      level: info
+      level: warn
     metrics:
       level: detailed
       address: 0.0.0.0:8888
