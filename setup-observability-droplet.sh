@@ -173,19 +173,30 @@ else
 fi
 
 echo ""
-echo "🔧 Fixing file permissions..."
+echo "🔧 Fixing file permissions and ownership..."
+
+# Grafana runs as UID 472, so we need to ensure it can read provisioning files
+# Set ownership for Grafana directories
+if [ -d grafana ]; then
+    chown -R 472:472 grafana/provisioning grafana/dashboards 2>/dev/null || true
+    chmod -R 755 grafana/provisioning grafana/dashboards 2>/dev/null || true
+    chmod -R 644 grafana/provisioning/**/*.yml grafana/provisioning/**/*.yaml \
+        grafana/dashboards/**/*.json 2>/dev/null || true
+    echo "  ✓ Grafana directories: ownership set to 472:472"
+fi
+
 # All config files must be readable (644) for non-root containers
 chmod 644 prometheus/*.yml prometheus/alerts/*.yml loki/loki.yml tempo/tempo.yml \
     promtail/*.yml alertmanager/alertmanager.yml otel-collector/otel-collector-config.yml \
-    caddy/Caddyfile grafana/provisioning/datasources/*.yml grafana/provisioning/alerting/*.yml \
-    grafana/provisioning/dashboards/*.yml grafana/dashboards/applications/*.json \
-    grafana/dashboards/infrastructure/*.json grafana/dashboards/default/*.json 2>/dev/null || true
+    caddy/Caddyfile 2>/dev/null || true
+echo "  ✓ Config files: permissions set to 644"
+
 # All directories must be accessible (755)
 chmod 755 prometheus prometheus/alerts loki tempo promtail alertmanager \
-    otel-collector caddy grafana grafana/provisioning grafana/provisioning/datasources \
-    grafana/provisioning/dashboards grafana/provisioning/alerting grafana/dashboards grafana/dashboards/applications \
-    grafana/dashboards/infrastructure grafana/dashboards/default 2>/dev/null || true
-echo "✅ File permissions fixed"
+    otel-collector caddy 2>/dev/null || true
+echo "  ✓ Service directories: permissions set to 755"
+
+echo "✅ File permissions and ownership fixed"
 
 echo ""
 echo "Stopping any running containers..."
