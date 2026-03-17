@@ -24,7 +24,7 @@ ingester:
 
 compactor:
   compaction:
-    block_retention: 720h  # 30 days
+    block_retention: __TEMPO_RETENTION__
 
 # metrics_generator disabled - apps already export metrics via OTEL Collector
 # Enabling this causes high memory usage and is redundant when apps are properly instrumented

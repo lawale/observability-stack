@@ -68,42 +68,27 @@ scrape_configs:
           environment: 'infrastructure'
 
   # ==================== APPLICATION METRICS ====================
-
-  # Jaiye Service - Production
-  - job_name: 'jaiye-production'
-    static_configs:
-      - targets: []  # Add your Jaiye production endpoints here
-        labels:
-          app: 'jaiye'
-          environment: 'production'
-    # If using service discovery, uncomment and configure:
-    # dns_sd_configs:
-    #   - names:
-    #       - 'jaiye-production.local'
-    #     type: 'A'
-    #     port: 80
-
-  # Jaiye Service - Staging
-  - job_name: 'jaiye-staging'
-    static_configs:
-      - targets: []  # Add your Jaiye staging endpoints here
-        labels:
-          app: 'jaiye'
-          environment: 'staging'
-
-  # Jaiye Service - Development
-  - job_name: 'jaiye-development'
-    static_configs:
-      - targets: []  # Add your Jaiye development endpoints here
-        labels:
-          app: 'jaiye'
-          environment: 'development'
-
-  # EstateVault Services - Template for multiple services
-  # Add similar configurations for your other services
-  # - job_name: 'estatevault-admin-production'
+  #
+  # Most applications send metrics via OTEL SDK -> OTEL Collector ->
+  # Prometheus remote write. You do NOT need scrape targets for those.
+  #
+  # Add scrape targets here only if an app ALSO exposes a traditional
+  # Prometheus /metrics endpoint for runtime metrics not covered by OTEL.
+  #
+  # Static target example:
+  # - job_name: 'jaiye-production'
   #   static_configs:
-  #     - targets: []
+  #     - targets: ['10.0.1.20:8080']
   #       labels:
-  #         app: 'estatevault-admin'
+  #         app: 'jaiye'
   #         environment: 'production'
+  #
+  # DNS-based service discovery (for dynamic environments):
+  # - job_name: 'my-app'
+  #   dns_sd_configs:
+  #     - names: ['my-app.service.consul']
+  #       type: 'A'
+  #       port: 8080
+  #   relabel_configs:
+  #     - source_labels: [__meta_dns_name]
+  #       target_label: app

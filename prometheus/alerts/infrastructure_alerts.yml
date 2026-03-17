@@ -50,3 +50,139 @@ groups:
         annotations:
           summary: "Tempo is experiencing trace ingestion failures"
           description: "{{ $value }} traces failed to ingest per second"
+
+      # ==================== SMTP/Notification Health ====================
+
+      # Watchdog alert - always fires. Use with a dead man's switch service
+      # (e.g., Healthchecks.io, Dead Man's Snitch, PagerDuty heartbeat)
+      # to detect when AlertManager notifications stop working.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+          category: heartbeat
+        annotations:
+          summary: "Watchdog heartbeat - notifications are working"
+          description: >-
+            This alert is always firing. If you stop receiving it,
+            it means AlertManager notifications (including SMTP) are broken.
+            Configure a dead man's switch receiver to detect this.
+
+      # AlertManager notification failures
+      - alert: AlertmanagerNotificationsFailing
+        expr: rate(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "AlertManager is failing to send notifications"
+          description: >-
+            AlertManager has been failing to send {{ $labels.integration }}
+            notifications for more than 5 minutes.
+            This likely indicates SMTP configuration issues.
+
+      # ==================== OTEL Collector Pipeline Health ====================
+
+      # OTEL Collector dropping spans
+      - alert: OTELCollectorDroppingSpans
+        expr: sum(rate(otelcol_processor_dropped_spans[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "OTEL Collector is dropping trace spans"
+          description: >-
+            OTEL Collector has been dropping {{ $value | humanize }} spans/s
+            for more than 5 minutes. Check collector logs and Tempo health.
+
+      # OTEL Collector dropping log records
+      - alert: OTELCollectorDroppingLogs
+        expr: sum(rate(otelcol_processor_dropped_log_records[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "OTEL Collector is dropping log records"
+          description: >-
+            OTEL Collector has been dropping {{ $value | humanize }} log records/s
+            for more than 5 minutes. Check collector logs and Loki health.
+
+      # OTEL Collector dropping metric points
+      - alert: OTELCollectorDroppingMetrics
+        expr: sum(rate(otelcol_processor_dropped_metric_points[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "OTEL Collector is dropping metric points"
+          description: >-
+            OTEL Collector has been dropping {{ $value | humanize }} metric points/s
+            for more than 5 minutes. Check collector logs and Prometheus health.
+
+      # OTEL Collector exporter failures
+      - alert: OTELCollectorExportFailures
+        expr: >-
+          sum by (exporter) (rate(otelcol_exporter_send_failed_spans[5m])) > 0
+          or sum by (exporter) (rate(otelcol_exporter_send_failed_log_records[5m])) > 0
+          or sum by (exporter) (rate(otelcol_exporter_send_failed_metric_points[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "OTEL Collector exporter {{ $labels.exporter }} is failing"
+          description: >-
+            The {{ $labels.exporter }} exporter has been failing to send
+            telemetry for more than 5 minutes.
+
+      # OTEL Collector high memory usage (approaching 512MiB limit)
+      - alert: OTELCollectorHighMemory
+        expr: otelcol_process_memory_rss > 450e6
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "OTEL Collector memory usage is high"
+          description: >-
+            OTEL Collector RSS is approaching the 512MiB memory_limiter threshold.
+
+      # ==================== Disk Space ====================
+
+      # Disk space warning at 80%
+      - alert: DiskSpaceRunningLow
+        expr: >-
+          (
+            (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_avail_bytes{mountpoint="/"})
+            / node_filesystem_size_bytes{mountpoint="/"}
+          ) > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Disk space is running low"
+          description: >-
+            Root filesystem usage is above 80%.
+            Consider reducing retention or expanding storage.
+
+      # Disk space critical at 90%
+      - alert: DiskSpaceCritical
+        expr: >-
+          (
+            (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_avail_bytes{mountpoint="/"})
+            / node_filesystem_size_bytes{mountpoint="/"}
+          ) > 0.90
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Disk space is critically low"
+          description: >-
+            Root filesystem usage is above 90%.
+            Immediate action required to prevent data loss.

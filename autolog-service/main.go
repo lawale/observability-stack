@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -35,16 +36,16 @@ type Config struct {
 
 // AutoLogConfig represents an auto-logging session
 type AutoLogConfig struct {
-	App          string    `json:"app"`
-	Environment  string    `json:"environment"`
-	Service      string    `json:"service"`
-	Endpoint     *string   `json:"endpoint,omitempty"`
-	ErrorType    *string   `json:"error_type,omitempty"`
-	TraceID      *string   `json:"trace_id,omitempty"`
-	TriggerSource string   `json:"trigger_source"`
-	EnabledAt    time.Time `json:"enabled_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	ErrorCount   int       `json:"error_count"`
+	App           string    `json:"app"`
+	Environment   string    `json:"environment"`
+	Service       string    `json:"service"`
+	Endpoint      *string   `json:"endpoint,omitempty"`
+	ErrorType     *string   `json:"error_type,omitempty"`
+	TraceID       *string   `json:"trace_id,omitempty"`
+	TriggerSource string    `json:"trigger_source"`
+	EnabledAt     time.Time `json:"enabled_at"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	ErrorCount    int       `json:"error_count"`
 }
 
 // Prometheus metrics
@@ -93,11 +94,11 @@ var (
 
 // AutoLogManager handles auto-logging state
 type AutoLogManager struct {
-	redisClient             *redis.Client
-	config                  *Config
-	mu                      sync.RWMutex
-	errorCounterPrefix      string
-	autoLogStatePrefix      string
+	redisClient        *redis.Client
+	config             *Config
+	mu                 sync.RWMutex
+	errorCounterPrefix string
+	autoLogStatePrefix string
 }
 
 // NewAutoLogManager creates a new auto-log manager
@@ -320,11 +321,11 @@ func (h *Handler) CheckAutoLog(w http.ResponseWriter, r *http.Request) {
 // Enable auto-log
 func (h *Handler) EnableAutoLog(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		App          string  `json:"app"`
-		Environment  string  `json:"environment"`
-		Service      string  `json:"service"`
-		Endpoint     *string `json:"endpoint,omitempty"`
-		ErrorType    *string `json:"error_type,omitempty"`
+		App           string  `json:"app"`
+		Environment   string  `json:"environment"`
+		Service       string  `json:"service"`
+		Endpoint      *string `json:"endpoint,omitempty"`
+		ErrorType     *string `json:"error_type,omitempty"`
 		TriggerSource string  `json:"trigger_source,omitempty"`
 	}
 
@@ -593,8 +594,10 @@ func main() {
 	r.HandleFunc("/health", handler.Health).Methods("GET")
 	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
-	// Webhooks
-	r.HandleFunc("/webhook/{type}", handler.AlertManagerWebhook).Methods("POST")
+	// Webhooks (with secret validation)
+	webhookRouter := r.PathPrefix("/webhook").Subrouter()
+	webhookRouter.Use(webhookSecretMiddleware(config.AlertmanagerWebhookSecret))
+	webhookRouter.HandleFunc("/{type}", handler.AlertManagerWebhook).Methods("POST")
 
 	// API endpoints
 	r.HandleFunc("/api/autolog/check", handler.CheckAutoLog).Methods("GET")
@@ -638,8 +641,45 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.RequestURI, time.Since(start))
+		if shouldLogRequest(r.URL.Path) {
+			log.Printf("%s %s %s", r.Method, r.RequestURI, time.Since(start))
+		}
 	})
+}
+
+func shouldLogRequest(path string) bool {
+	if path == "/health" || path == "/metrics" {
+		return false
+	}
+
+	if strings.HasPrefix(path, "/api/autolog/check") {
+		return false
+	}
+
+	return true
+}
+
+// webhookSecretMiddleware validates the X-Webhook-Secret header on webhook endpoints
+func webhookSecretMiddleware(secret string) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if secret == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			providedSecret := r.Header.Get("X-Webhook-Secret")
+			if providedSecret != secret {
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": "invalid or missing webhook secret",
+				})
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

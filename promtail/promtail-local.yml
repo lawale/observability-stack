@@ -25,6 +25,13 @@ scrape_configs:
             values: ["observability_observability"]
 
     relabel_configs:
+      # Avoid duplicate ingestion:
+      # - caddy is already collected from /var/log/caddy/*.log below
+      # - promtail's own logs are usually high-churn and low-value
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        regex: 'caddy|promtail'
+        action: drop
+
       - source_labels: ['__meta_docker_container_name']
         regex: '/(.*)'
         target_label: 'container'
@@ -55,6 +62,44 @@ scrape_configs:
       - labels:
           level:
           logger:
+
+      - output:
+          source: message
+
+  # Caddy reverse proxy access logs (JSON format)
+  - job_name: caddy-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: caddy
+          app: infrastructure
+          environment: observability
+          __path__: /var/log/caddy/*.log
+
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: ts
+            status: status
+            duration: duration
+            size: size
+            method: '["request"]["method"]'
+            uri: '["request"]["uri"]'
+            host: '["request"]["host"]'
+
+      - timestamp:
+          source: timestamp
+          format: UnixMs
+
+      - labels:
+          status:
+          method:
+          host:
+
+      - template:
+          source: message
+          template: '{{ .method }} {{ .uri }} {{ .status }} {{ .duration }}s'
 
       - output:
           source: message

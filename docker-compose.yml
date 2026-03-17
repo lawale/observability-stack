@@ -23,6 +23,13 @@ volumes:
   redis-autolog:
   caddy-data:
   caddy-config:
+  caddy-logs:
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 services:
   # ==================== GRAFANA STACK ====================
@@ -59,6 +66,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   prometheus:
     image: prom/prometheus:v3.1.0
@@ -67,6 +75,13 @@ services:
     user: "nobody"
     expose:
       - "9090"
+    # SECURITY NOTE: --web.enable-remote-write-receiver exposes an unauthenticated
+    # write endpoint at /api/v1/write. Currently protected by:
+    #   1. Port 9090 is NOT exposed publicly (only on internal Docker network)
+    #   2. OTEL Collector connects internally via Docker network
+    # If you ever expose Prometheus externally, add basic auth via:
+    #   --web.config.file=/etc/prometheus/web.yml
+    #   web.yml: basic_auth_users: { writer: <bcrypt hash from: htpasswd -nB writer> }
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -75,7 +90,8 @@ services:
       - '--web.enable-lifecycle'
       - '--web.enable-remote-write-receiver'
       - '--enable-feature=native-histograms'
-      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}'
+      - '--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-4GB}'
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts:/etc/prometheus/alerts:ro
@@ -87,6 +103,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   loki:
     image: grafana/loki:3.3.2
@@ -94,9 +111,15 @@ services:
     restart: unless-stopped
     expose:
       - "3100"
-    command: -config.file=/etc/loki/loki.yml
+    environment:
+      - LOKI_RETENTION=${LOKI_RETENTION:-168h}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed "s|__LOKI_RETENTION__|$$LOKI_RETENTION|g" /etc/loki/loki.yml > /tmp/loki.yml
+        exec /usr/bin/loki -config.file=/tmp/loki.yml
     volumes:
-      - ./loki/loki.yml:/etc/loki/loki.yml
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
       - loki-storage:/loki
     networks:
       - observability
@@ -105,13 +128,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   tempo:
     image: grafana/tempo:2.7.2
     container_name: tempo
     restart: unless-stopped
     user: "10001"
-    command: [ "-config.file=/etc/tempo/tempo.yml" ]
+    environment:
+      - TEMPO_RETENTION=${TEMPO_RETENTION:-168h}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed "s|__TEMPO_RETENTION__|$$TEMPO_RETENTION|g" /etc/tempo/tempo.yml > /tmp/tempo-runtime.yml
+        exec /tempo -config.file=/tmp/tempo-runtime.yml
     expose:
       - "3200"
     volumes:
@@ -124,6 +154,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   # Promtail only for observability stack logs
   # Application logs come via OTLP or separate Promtail on app droplets
@@ -135,11 +166,13 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - ./promtail/promtail-local.yml:/etc/promtail/promtail.yml
+      - caddy-logs:/var/log/caddy:ro
     command: -config.file=/etc/promtail/promtail.yml
     networks:
       - observability
     depends_on:
       - loki
+    logging: *default-logging
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
@@ -147,12 +180,25 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:9093:9093"
+    environment:
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - ALERT_EMAIL=${ALERT_EMAIL:-alerts@localhost}
+      - CRITICAL_ALERT_EMAIL=${CRITICAL_ALERT_EMAIL:-critical@localhost}
+      - AUTOLOG_WEBHOOK_SECRET=${AUTOLOG_WEBHOOK_SECRET:-}
     volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-storage:/alertmanager
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--storage.path=/alertmanager'
+      - |
+        sed -e "s|__SMTP_USERNAME__|$$SMTP_USERNAME|g" \
+            -e "s|__SMTP_PASSWORD__|$$SMTP_PASSWORD|g" \
+            -e "s|__ALERT_EMAIL__|$$ALERT_EMAIL|g" \
+            -e "s|__CRITICAL_ALERT_EMAIL__|$$CRITICAL_ALERT_EMAIL|g" \
+            -e "s|__AUTOLOG_WEBHOOK_SECRET__|$$AUTOLOG_WEBHOOK_SECRET|g" \
+            /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     networks:
       - observability
     healthcheck:
@@ -160,6 +206,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   # ==================== AUTO-LOGGING SERVICE ====================
 
@@ -174,6 +221,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   autolog-service:
     build:
@@ -201,6 +249,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   # ==================== OTEL COLLECTOR ====================
 
@@ -228,6 +277,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
   # ==================== CADDY REVERSE PROXY ====================
 
@@ -245,6 +295,7 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
       - caddy-data:/data
       - caddy-config:/config
+      - caddy-logs:/var/log/caddy
     networks:
       - observability
     depends_on:
@@ -254,6 +305,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
 
 # ==================== NOTES ====================
 #

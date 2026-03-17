@@ -44,12 +44,71 @@ processors:
         action: upsert
         from_attribute: service.name
 
+  # Filter processor - drop telemetry from unknown/unregistered services
+  # Drops any telemetry that lacks a service.name resource attribute.
+  # All properly instrumented apps set service.name via OTEL SDK.
+  filter/known_services:
+    error_mode: ignore
+    traces:
+      span:
+        - 'resource.attributes["service.name"] == nil'
+    metrics:
+      metric:
+        - 'resource.attributes["service.name"] == nil'
+    logs:
+      log_record:
+        - 'resource.attributes["service.name"] == nil'
+
   # Resource processor for logs - set resource-level attributes
   resource/logs:
     attributes:
       - key: log.source
         value: otel-collector
         action: upsert
+
+  # Remove high-cardinality resource attributes before converting
+  # resources into metric labels for Prometheus remote write.
+  resource/metrics_sanitize:
+    attributes:
+      - key: service.instance.id
+        action: delete
+      - key: process.pid
+        action: delete
+      - key: process.executable.path
+        action: delete
+      - key: process.command_line
+        action: delete
+      - key: container.id
+        action: delete
+      - key: k8s.pod.uid
+        action: delete
+      - key: k8s.pod.name
+        action: delete
+
+  # ==================== ADVANCED: Tail Sampling (Optional) ====================
+  # Uncomment to sample traces based on error status, latency, or probabilistic rate.
+  # Requires the contrib collector image (already in use).
+  # Docs: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor
+  #
+  # tail_sampling:
+  #   decision_wait: 10s
+  #   num_traces: 100
+  #   expected_new_traces_per_sec: 10
+  #   policies:
+  #     - name: errors-policy
+  #       type: status_code
+  #       status_code:
+  #         status_codes: [ERROR]
+  #     - name: latency-policy
+  #       type: latency
+  #       latency:
+  #         threshold_ms: 2000
+  #     - name: probabilistic-policy
+  #       type: probabilistic
+  #       probabilistic:
+  #         sampling_percentage: 10
+  #
+  # Add to traces pipeline: [memory_limiter, filter/known_services, tail_sampling, batch, ...]
 
 exporters:
   # Tempo exporter for traces
@@ -103,19 +162,21 @@ service:
     # Traces pipeline
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource, attributes]
+      processors: [memory_limiter, filter/known_services, batch, resource, attributes]
       exporters: [otlp/tempo]
 
     # Metrics pipeline
+    # Note: filter/known_services NOT applied here because the prometheus
+    # receiver (self-scrape) produces metrics without service.name attribute.
     metrics:
       receivers: [otlp, prometheus]
-      processors: [memory_limiter, batch, resource]
+      processors: [memory_limiter, resource/metrics_sanitize, batch, resource]
       exporters: [prometheusremotewrite]
 
     # Logs pipeline - using native OTLP ingestion to Loki
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource/logs]
+      processors: [memory_limiter, filter/known_services, batch, resource/logs]
       exporters: [otlphttp/loki]
 
   telemetry:
