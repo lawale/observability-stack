@@ -155,8 +155,10 @@ The script will:
 3. Configure UFW firewall rules
 4. Fix config file permissions
 5. Generate secure credentials
-6. Start all services
-7. Fix Tempo volume ownership
+6. Invoke the release deploy flow (`scripts/deploy-release.sh`)
+7. Start all services with health checks, rollback, and retention cleanup
+
+For subsequent updates, use `scripts/deploy-release.sh` directly.
 
 ### Step 2: Set DNS Records
 
@@ -177,10 +179,10 @@ Visit `https://grafana.yourdomain.com`
 
 ```bash
 # Check all services are running
-docker compose ps
+docker compose -p observability -f /opt/observability-deploy/current/docker-compose.yml ps
 
 # View service logs
-docker compose logs -f
+docker compose -p observability -f /opt/observability-deploy/current/docker-compose.yml logs -f
 
 # Health check
 curl http://localhost:3000/api/health
