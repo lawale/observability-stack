@@ -202,6 +202,10 @@ ACME_EMAIL=admin@yourdomain.com
 # Security
 GRAFANA_ADMIN_PASSWORD=your-secure-password
 AUTOLOG_WEBHOOK_SECRET=your-webhook-secret
+GRAFANA_PROMETHEUS_URL=http://prometheus:9090
+GRAFANA_LOKI_URL=http://loki:3100
+GRAFANA_TEMPO_URL=http://tempo:3200
+GRAFANA_REDIS_URL=redis://redis-autolog:6379
 
 # Data Retention
 PROMETHEUS_RETENTION=15d
@@ -920,6 +924,47 @@ docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 ---
 
 ## Maintenance
+
+### Safe Release Deploys
+
+To keep your git checkout clean on servers, deploy from a staged release directory:
+
+```bash
+cd /opt/observability-stack
+git pull --ff-only
+sudo DEPLOY_ROOT=/opt/observability-deploy PROJECT_NAME=observability ./scripts/deploy-release.sh
+```
+
+This deploy flow:
+- Copies source into `/opt/observability-deploy/releases/<timestamp>`
+- Reuses `.env` from the current deployed release
+- Backs up stateful volumes before changes
+- Applies volume ownership fixes
+- Waits for health and auto-rolls back on failure
+- Leaves `/opt/observability-stack` source files untouched
+- Keeps only the most recent release directories (default: 5)
+- Keeps only the most recent backup sets (default: 10)
+- Prunes old Docker cache artifacts by age (default: 14 days, conservative mode)
+
+Retention/prune controls (optional env vars):
+
+```bash
+# defaults shown
+KEEP_RELEASES=5
+KEEP_BACKUPS=10
+ENABLE_DOCKER_PRUNE=1
+DOCKER_PRUNE_UNTIL=336h
+PRUNE_UNUSED_IMAGES=0
+```
+
+Example with explicit controls:
+
+```bash
+sudo DEPLOY_ROOT=/opt/observability-deploy PROJECT_NAME=observability \
+  KEEP_RELEASES=7 KEEP_BACKUPS=14 ENABLE_DOCKER_PRUNE=1 \
+  DOCKER_PRUNE_UNTIL=336h PRUNE_UNUSED_IMAGES=0 \
+  ./scripts/deploy-release.sh
+```
 
 ### Daily Checks
 

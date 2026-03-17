@@ -45,6 +45,10 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+      - GRAFANA_PROMETHEUS_URL=${GRAFANA_PROMETHEUS_URL:-http://prometheus:9090}
+      - GRAFANA_LOKI_URL=${GRAFANA_LOKI_URL:-http://loki:3100}
+      - GRAFANA_TEMPO_URL=${GRAFANA_TEMPO_URL:-http://tempo:3200}
+      - GRAFANA_REDIS_URL=${GRAFANA_REDIS_URL:-redis://redis-autolog:6379}
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,redis-datasource
       - GF_SENTRY_DSN=${GRAFANA_SENTRY_DSN:-}
       - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor

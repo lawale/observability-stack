@@ -6,7 +6,7 @@ datasources:
     type: prometheus
     uid: prometheus
     access: proxy
-    url: http://prometheus:9090
+    url: $__env{GRAFANA_PROMETHEUS_URL}
     isDefault: true
     editable: true
     jsonData:
@@ -18,7 +18,7 @@ datasources:
     type: loki
     uid: loki
     access: proxy
-    url: http://loki:3100
+    url: $__env{GRAFANA_LOKI_URL}
     editable: true
     jsonData:
       maxLines: 1000
@@ -36,7 +36,7 @@ datasources:
     type: tempo
     uid: tempo
     access: proxy
-    url: http://tempo:3200
+    url: $__env{GRAFANA_TEMPO_URL}
     editable: true
     jsonData:
       httpMethod: GET
@@ -81,7 +81,7 @@ datasources:
   - name: Redis
     type: redis-datasource
     access: proxy
-    url: redis://redis-autolog:6379
+    url: $__env{GRAFANA_REDIS_URL}
     editable: true
     jsonData:
       client: standalone

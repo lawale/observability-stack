@@ -265,24 +265,24 @@ echo ""
 echo "🔧 Fixing configuration file permissions..."
 
 # Grafana provisioning/dashboard files are bind-mounted read-only.
-# They only need to be world-readable; ownership is handled on data volumes later.
+# They only need to be readable; avoid forcing exact modes on tracked files.
 if [ -d grafana ]; then
-    chmod -R 755 grafana/provisioning grafana/dashboards 2>/dev/null || true
-    chmod -R 644 grafana/provisioning/**/*.yml grafana/provisioning/**/*.yaml \
-        grafana/dashboards/**/*.json 2>/dev/null || true
+    find grafana/provisioning grafana/dashboards -type d -exec chmod a+rx {} + 2>/dev/null || true
+    find grafana/provisioning grafana/dashboards -type f \( -name "*.yml" -o -name "*.yaml" -o -name "*.json" \) \
+        -exec chmod a+r {} + 2>/dev/null || true
     echo "  ✓ Grafana provisioning/dashboard files are readable"
 fi
 
-# All config files must be readable (644) for non-root containers
-chmod 644 prometheus/*.yml prometheus/alerts/*.yml loki/loki.yml tempo/tempo.yml \
+# All config files must be readable for non-root containers.
+chmod a+r prometheus/*.yml prometheus/alerts/*.yml loki/loki.yml tempo/tempo.yml \
     promtail/*.yml alertmanager/alertmanager.yml otel-collector/otel-collector-config.yml \
     caddy/Caddyfile 2>/dev/null || true
-echo "  ✓ Config files: permissions set to 644"
+echo "  ✓ Config files: read permission ensured"
 
-# All directories must be accessible (755)
-chmod 755 prometheus prometheus/alerts loki tempo promtail alertmanager \
+# All directories must be traversable.
+chmod a+rx prometheus prometheus/alerts loki tempo promtail alertmanager \
     otel-collector caddy 2>/dev/null || true
-echo "  ✓ Service directories: permissions set to 755"
+echo "  ✓ Service directories: execute/read permission ensured"
 
 echo "✅ Configuration file permissions fixed"
 

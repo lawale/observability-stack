@@ -19,6 +19,7 @@ caddy-config/
 # Grafana generated files
 grafana/provisioning/datasources/*.db
 grafana/provisioning/notifiers/*.db
+grafana/provisioning/datasources/*.local.yml
 
 # Logs
 *.log
