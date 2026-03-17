@@ -155,8 +155,9 @@ The script will:
 3. Configure UFW firewall rules
 4. Fix config file permissions
 5. Generate secure credentials
-6. Invoke the release deploy flow (`scripts/deploy-release.sh`)
-7. Start all services with health checks, rollback, and retention cleanup
+6. Optionally prompt for SMTP/alert email settings
+7. Invoke the release deploy flow (`scripts/deploy-release.sh`)
+8. Start all services with health checks, rollback, and retention cleanup
 
 For subsequent updates, use `scripts/deploy-release.sh` directly.
 
@@ -959,12 +960,25 @@ DOCKER_PRUNE_UNTIL=336h
 PRUNE_UNUSED_IMAGES=0
 ```
 
+Environment file selection:
+
+```bash
+# default: auto (prefer current deployed .env, then source .env)
+ENV_SOURCE=auto
+
+# force use source checkout .env
+ENV_SOURCE=source
+
+# force use deployed current .env
+ENV_SOURCE=current
+```
+
 Example with explicit controls:
 
 ```bash
 sudo DEPLOY_ROOT=/opt/observability-deploy PROJECT_NAME=observability \
   KEEP_RELEASES=7 KEEP_BACKUPS=14 ENABLE_DOCKER_PRUNE=1 \
-  DOCKER_PRUNE_UNTIL=336h PRUNE_UNUSED_IMAGES=0 \
+  DOCKER_PRUNE_UNTIL=336h PRUNE_UNUSED_IMAGES=0 ENV_SOURCE=auto \
   ./scripts/deploy-release.sh
 ```
 

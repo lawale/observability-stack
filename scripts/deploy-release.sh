@@ -13,6 +13,7 @@ RELEASE_DIR="$DEPLOY_ROOT/releases/$RELEASE_ID"
 CURRENT_LINK="$DEPLOY_ROOT/current"
 BACKUP_STATEFUL_VOLUMES="${BACKUP_STATEFUL_VOLUMES:-1}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-180}"
+ENV_SOURCE="${ENV_SOURCE:-auto}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
 KEEP_BACKUPS="${KEEP_BACKUPS:-10}"
 ENABLE_DOCKER_PRUNE="${ENABLE_DOCKER_PRUNE:-1}"
@@ -247,23 +248,49 @@ if ! command -v rsync >/dev/null 2>&1; then
   exit 1
 fi
 
+if [ "$ENV_SOURCE" != "auto" ] && [ "$ENV_SOURCE" != "current" ] && [ "$ENV_SOURCE" != "source" ]; then
+  echo "ERROR: ENV_SOURCE must be one of: auto, current, source"
+  exit 1
+fi
+
 rsync -a --delete \
   --exclude '.git' \
   --exclude '.env' \
   --exclude 'backups' \
   "$SOURCE_DIR/" "$RELEASE_DIR/"
 
-if [ -f "$CURRENT_LINK/.env" ]; then
+ENV_FILE_USED=""
+if [ "$ENV_SOURCE" = "current" ]; then
+  if [ ! -f "$CURRENT_LINK/.env" ]; then
+    echo "ERROR: ENV_SOURCE=current but no .env exists at $CURRENT_LINK/.env"
+    exit 1
+  fi
   cp "$CURRENT_LINK/.env" "$RELEASE_DIR/.env"
-elif [ -f "$SOURCE_DIR/.env" ]; then
+  ENV_FILE_USED="$CURRENT_LINK/.env"
+elif [ "$ENV_SOURCE" = "source" ]; then
+  if [ ! -f "$SOURCE_DIR/.env" ]; then
+    echo "ERROR: ENV_SOURCE=source but no .env exists at $SOURCE_DIR/.env"
+    exit 1
+  fi
   cp "$SOURCE_DIR/.env" "$RELEASE_DIR/.env"
-elif [ -f "$RELEASE_DIR/.env.example" ]; then
-  cp "$RELEASE_DIR/.env.example" "$RELEASE_DIR/.env"
-  echo "WARN: no existing .env found; seeded from .env.example"
+  ENV_FILE_USED="$SOURCE_DIR/.env"
 else
-  echo "ERROR: no .env or .env.example available"
-  exit 1
+  if [ -f "$CURRENT_LINK/.env" ]; then
+    cp "$CURRENT_LINK/.env" "$RELEASE_DIR/.env"
+    ENV_FILE_USED="$CURRENT_LINK/.env"
+  elif [ -f "$SOURCE_DIR/.env" ]; then
+    cp "$SOURCE_DIR/.env" "$RELEASE_DIR/.env"
+    ENV_FILE_USED="$SOURCE_DIR/.env"
+  elif [ -f "$RELEASE_DIR/.env.example" ]; then
+    cp "$RELEASE_DIR/.env.example" "$RELEASE_DIR/.env"
+    ENV_FILE_USED="$RELEASE_DIR/.env.example"
+    echo "WARN: no existing .env found; seeded from .env.example"
+  else
+    echo "ERROR: no .env or .env.example available"
+    exit 1
+  fi
 fi
+echo "Using environment file: $ENV_FILE_USED"
 
 # Keep mounted config files readable without forcing exact chmod mode bits.
 find "$RELEASE_DIR/grafana/provisioning" "$RELEASE_DIR/grafana/dashboards" -type d -exec chmod a+rx {} + 2>/dev/null || true

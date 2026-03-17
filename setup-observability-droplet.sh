@@ -33,6 +33,70 @@ upsert_env_var() {
     fi
 }
 
+get_env_var() {
+    local key="$1"
+    grep -E "^${key}=" .env 2>/dev/null | tail -n1 | cut -d'=' -f2-
+}
+
+configure_alerting() {
+    local smtp_host smtp_port smtp_username smtp_password alert_email critical_alert_email
+    local smtp_host_default smtp_port_default smtp_username_default smtp_password_default
+    local alert_email_default critical_alert_email_default
+
+    read -p "Do you want to configure email alert settings now? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "ℹ️  Skipping alert email setup"
+        return 0
+    fi
+
+    smtp_host_default="$(get_env_var SMTP_HOST)"
+    smtp_port_default="$(get_env_var SMTP_PORT)"
+    smtp_username_default="$(get_env_var SMTP_USERNAME)"
+    smtp_password_default="$(get_env_var SMTP_PASSWORD)"
+    alert_email_default="$(get_env_var ALERT_EMAIL)"
+    critical_alert_email_default="$(get_env_var CRITICAL_ALERT_EMAIL)"
+
+    smtp_host_default="${smtp_host_default:-smtp.gmail.com}"
+    smtp_port_default="${smtp_port_default:-587}"
+    smtp_username_default="${smtp_username_default:-your-email@gmail.com}"
+    alert_email_default="${alert_email_default:-alerts@yourdomain.com}"
+    critical_alert_email_default="${critical_alert_email_default:-critical@yourdomain.com}"
+
+    read -r -p "SMTP host [$smtp_host_default]: " smtp_host
+    smtp_host="${smtp_host:-$smtp_host_default}"
+
+    read -r -p "SMTP port [$smtp_port_default]: " smtp_port
+    smtp_port="${smtp_port:-$smtp_port_default}"
+
+    read -r -p "SMTP username [$smtp_username_default]: " smtp_username
+    smtp_username="${smtp_username:-$smtp_username_default}"
+
+    read -r -s -p "SMTP password (leave blank to keep existing): " smtp_password
+    echo
+    if [ -z "$smtp_password" ]; then
+        smtp_password="$smtp_password_default"
+    fi
+
+    read -r -p "Alert email [$alert_email_default]: " alert_email
+    alert_email="${alert_email:-$alert_email_default}"
+
+    read -r -p "Critical alert email [$critical_alert_email_default]: " critical_alert_email
+    critical_alert_email="${critical_alert_email:-$critical_alert_email_default}"
+
+    upsert_env_var "SMTP_HOST" "$smtp_host"
+    upsert_env_var "SMTP_PORT" "$smtp_port"
+    upsert_env_var "SMTP_USERNAME" "$smtp_username"
+    if [ -n "$smtp_password" ]; then
+        upsert_env_var "SMTP_PASSWORD" "$smtp_password"
+    fi
+    upsert_env_var "ALERT_EMAIL" "$alert_email"
+    upsert_env_var "CRITICAL_ALERT_EMAIL" "$critical_alert_email"
+
+    rm -f .env.bak
+    echo "✅ Alert email settings updated"
+}
+
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║   Observability Droplet - Multi-Droplet Setup               ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
@@ -207,6 +271,9 @@ rm -f .env.bak
 echo "✅ Updated environment values for this deployment"
 
 echo ""
+configure_alerting
+
+echo ""
 echo "🔥 Configuring firewall..."
 
 # Configure UFW
@@ -281,6 +348,7 @@ KEEP_BACKUPS="${KEEP_BACKUPS:-10}"
 DOCKER_PRUNE_UNTIL="${DOCKER_PRUNE_UNTIL:-336h}"
 PRUNE_UNUSED_IMAGES="${PRUNE_UNUSED_IMAGES:-0}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-180}"
+ENV_SOURCE="${ENV_SOURCE:-source}"
 
 SOURCE_DIR="$SOURCE_DIR" \
 DEPLOY_ROOT="$DEPLOY_ROOT" \
@@ -292,6 +360,7 @@ KEEP_BACKUPS="$KEEP_BACKUPS" \
 ENABLE_DOCKER_PRUNE="$ENABLE_DOCKER_PRUNE" \
 DOCKER_PRUNE_UNTIL="$DOCKER_PRUNE_UNTIL" \
 PRUNE_UNUSED_IMAGES="$PRUNE_UNUSED_IMAGES" \
+ENV_SOURCE="$ENV_SOURCE" \
 bash "$DEPLOY_SCRIPT"
 
 echo ""
