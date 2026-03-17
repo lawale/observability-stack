@@ -5,6 +5,37 @@
 
 set -e
 
+fix_service_volume_permissions() {
+    local container_name="$1"
+    local mount_dest="$2"
+    local owner_uid="$3"
+    local owner_gid="$4"
+    local required_subdirs="$5"
+
+    local volume_path
+    volume_path=$(docker inspect "$container_name" \
+        --format "{{range .Mounts}}{{if eq .Destination \"$mount_dest\"}}{{.Source}}{{end}}{{end}}" \
+        2>/dev/null || true)
+
+    if [ -z "$volume_path" ]; then
+        echo "⚠️  Could not resolve mount path for $container_name ($mount_dest)"
+        return 0
+    fi
+
+    mkdir -p "$volume_path"
+
+    if [ -n "$required_subdirs" ]; then
+        for subdir in $required_subdirs; do
+            mkdir -p "$volume_path/$subdir"
+        done
+    fi
+
+    chown -R "$owner_uid:$owner_gid" "$volume_path"
+    chmod -R 755 "$volume_path"
+
+    echo "  ✓ $container_name volume fixed at: $volume_path (owner $owner_uid:$owner_gid)"
+}
+
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║   Observability Droplet - Multi-Droplet Setup               ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
@@ -173,16 +204,15 @@ else
 fi
 
 echo ""
-echo "🔧 Fixing file permissions and ownership..."
+echo "🔧 Fixing configuration file permissions..."
 
-# Grafana runs as UID 472, so we need to ensure it can read provisioning files
-# Set ownership for Grafana directories
+# Grafana provisioning/dashboard files are bind-mounted read-only.
+# They only need to be world-readable; ownership is handled on data volumes later.
 if [ -d grafana ]; then
-    chown -R 472:472 grafana/provisioning grafana/dashboards 2>/dev/null || true
     chmod -R 755 grafana/provisioning grafana/dashboards 2>/dev/null || true
     chmod -R 644 grafana/provisioning/**/*.yml grafana/provisioning/**/*.yaml \
         grafana/dashboards/**/*.json 2>/dev/null || true
-    echo "  ✓ Grafana directories: ownership set to 472:472"
+    echo "  ✓ Grafana provisioning/dashboard files are readable"
 fi
 
 # All config files must be readable (644) for non-root containers
@@ -196,7 +226,7 @@ chmod 755 prometheus prometheus/alerts loki tempo promtail alertmanager \
     otel-collector caddy 2>/dev/null || true
 echo "  ✓ Service directories: permissions set to 755"
 
-echo "✅ File permissions and ownership fixed"
+echo "✅ Configuration file permissions fixed"
 
 echo ""
 echo "Stopping any running containers..."
@@ -211,18 +241,23 @@ echo "🚀 Starting observability stack..."
 docker compose -f docker-compose.yml up -d
 
 echo ""
-echo "🔧 Fixing Tempo volume permissions..."
-docker compose stop tempo
-TEMPO_VOL=$(docker volume inspect observability_tempo-storage --format '{{ .Mountpoint }}' 2>/dev/null || echo "")
-if [ -n "$TEMPO_VOL" ]; then
-    # Create required subdirectories
-    mkdir -p "$TEMPO_VOL/blocks" "$TEMPO_VOL/wal" "$TEMPO_VOL/generator"
-    # Set ownership for entire volume
-    chown -R 10001:10001 "$TEMPO_VOL"
-    chmod -R 755 "$TEMPO_VOL"
-    echo "✅ Tempo volume prepared with subdirectories"
-fi
-docker compose up -d tempo
+echo "🔧 Fixing persistent volume permissions..."
+docker compose -f docker-compose.yml stop grafana prometheus loki tempo alertmanager >/dev/null 2>&1 || true
+
+# Grafana runs as UID 472
+fix_service_volume_permissions "grafana" "/var/lib/grafana" "472" "472" ""
+
+# Prometheus runs as nobody in compose (UID/GID 65534)
+fix_service_volume_permissions "prometheus" "/prometheus" "65534" "65534" ""
+
+# Loki and Tempo store data with UID/GID 10001 in this stack
+fix_service_volume_permissions "loki" "/loki" "10001" "10001" "chunks rules compactor"
+fix_service_volume_permissions "tempo" "/tmp/tempo" "10001" "10001" "blocks wal generator"
+
+# Alertmanager commonly runs as nobody (UID/GID 65534)
+fix_service_volume_permissions "alertmanager" "/alertmanager" "65534" "65534" ""
+
+docker compose -f docker-compose.yml up -d grafana prometheus loki tempo alertmanager
 
 echo ""
 echo "⏳ Waiting for services to be healthy..."

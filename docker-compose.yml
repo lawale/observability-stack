@@ -269,9 +269,12 @@ services:
     networks:
       - observability
     depends_on:
-      - tempo
-      - loki
-      - prometheus
+      tempo:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
       interval: 10s
