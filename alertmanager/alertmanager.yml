@@ -152,8 +152,9 @@ receivers:
       - url: 'http://autolog-service:5000/webhook/critical'
         send_resolved: true
         http_config:
-          headers:
-            X-Webhook-Secret: '__AUTOLOG_WEBHOOK_SECRET__'
+          authorization:
+            type: Bearer
+            credentials: '__AUTOLOG_WEBHOOK_SECRET__'
 
   # Warning alerts - email only
   - name: 'warning-alerts'
@@ -205,8 +206,9 @@ receivers:
       - url: 'http://autolog-service:5000/webhook/autolog'
         send_resolved: true
         http_config:
-          headers:
-            X-Webhook-Secret: '__AUTOLOG_WEBHOOK_SECRET__'
+          authorization:
+            type: Bearer
+            credentials: '__AUTOLOG_WEBHOOK_SECRET__'
 
   # Application alerts
   - name: 'application-alerts'
@@ -214,8 +216,9 @@ receivers:
       - url: 'http://autolog-service:5000/webhook/application'
         send_resolved: true
         http_config:
-          headers:
-            X-Webhook-Secret: '__AUTOLOG_WEBHOOK_SECRET__'
+          authorization:
+            type: Bearer
+            credentials: '__AUTOLOG_WEBHOOK_SECRET__'
 
   # Infrastructure alerts
   - name: 'infrastructure-alerts'
@@ -223,8 +226,9 @@ receivers:
       - url: 'http://autolog-service:5000/webhook/infrastructure'
         send_resolved: true
         http_config:
-          headers:
-            X-Webhook-Secret: '__AUTOLOG_WEBHOOK_SECRET__'
+          authorization:
+            type: Bearer
+            credentials: '__AUTOLOG_WEBHOOK_SECRET__'
 
 # Inhibition rules - suppress alerts when other alerts are firing
 inhibit_rules:

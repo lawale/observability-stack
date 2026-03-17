@@ -564,6 +564,21 @@ func getEnv(key, defaultValue string) string {
 func main() {
 	config := loadConfig()
 
+	// Healthcheck mode for scratch images (no wget/curl available).
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		checkURL := fmt.Sprintf("http://127.0.0.1:%s/health", config.Port)
+		client := &http.Client{Timeout: 2 * time.Second}
+		resp, err := client.Get(checkURL)
+		if err != nil {
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	// Setup Redis
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%s", config.RedisHost, config.RedisPort),
@@ -669,6 +684,13 @@ func webhookSecretMiddleware(secret string) mux.MiddlewareFunc {
 			}
 
 			providedSecret := r.Header.Get("X-Webhook-Secret")
+			if providedSecret == "" {
+				authHeader := r.Header.Get("Authorization")
+				const bearerPrefix = "Bearer "
+				if strings.HasPrefix(authHeader, bearerPrefix) {
+					providedSecret = strings.TrimSpace(strings.TrimPrefix(authHeader, bearerPrefix))
+				}
+			}
 			if providedSecret != secret {
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]string{

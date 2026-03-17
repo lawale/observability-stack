@@ -245,7 +245,7 @@ services:
       redis-autolog:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/health"]
+      test: ["CMD", "/autolog-service", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -276,7 +276,7 @@ services:
       prometheus:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
+      test: ["CMD", "/otelcol-contrib", "--version"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -304,7 +304,7 @@ services:
     depends_on:
       - grafana
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2019/metrics"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
       interval: 10s
       timeout: 5s
       retries: 5

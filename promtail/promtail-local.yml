@@ -84,9 +84,9 @@ scrape_configs:
             status: status
             duration: duration
             size: size
-            method: '["request"]["method"]'
-            uri: '["request"]["uri"]'
-            host: '["request"]["host"]'
+            method: request.method
+            uri: request.uri
+            host: request.host
 
       - timestamp:
           source: timestamp

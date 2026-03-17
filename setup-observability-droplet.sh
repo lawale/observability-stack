@@ -5,35 +5,71 @@
 
 set -e
 
+LOCAL_TEST="${LOCAL_TEST:-0}"
+OS_NAME="$(uname -s)"
+
 fix_service_volume_permissions() {
-    local container_name="$1"
+    local service_name="$1"
     local mount_dest="$2"
     local owner_uid="$3"
     local owner_gid="$4"
     local required_subdirs="$5"
 
-    local volume_path
-    volume_path=$(docker inspect "$container_name" \
-        --format "{{range .Mounts}}{{if eq .Destination \"$mount_dest\"}}{{.Source}}{{end}}{{end}}" \
-        2>/dev/null || true)
-
-    if [ -z "$volume_path" ]; then
-        echo "⚠️  Could not resolve mount path for $container_name ($mount_dest)"
+    local container_id
+    container_id=$(docker compose -f docker-compose.yml ps --all -q "$service_name" 2>/dev/null || true)
+    if [ -z "$container_id" ]; then
+        echo "⚠️  Could not resolve container ID for service: $service_name"
         return 0
     fi
 
-    mkdir -p "$volume_path"
+    local mount_info
+    mount_info=$(docker inspect "$container_id" \
+        --format "{{range .Mounts}}{{if eq .Destination \"$mount_dest\"}}{{.Type}}|{{.Name}}|{{.Source}}{{end}}{{end}}" \
+        2>/dev/null || true)
 
+    if [ -z "$mount_info" ]; then
+        echo "⚠️  Could not resolve mount path for $service_name ($mount_dest)"
+        return 0
+    fi
+
+    local mount_type mount_name mount_source
+    IFS='|' read -r mount_type mount_name mount_source <<< "$mount_info"
+
+    local mkdir_cmd="mkdir -p /target"
     if [ -n "$required_subdirs" ]; then
         for subdir in $required_subdirs; do
-            mkdir -p "$volume_path/$subdir"
+            mkdir_cmd="$mkdir_cmd /target/$subdir"
         done
     fi
 
-    chown -R "$owner_uid:$owner_gid" "$volume_path"
-    chmod -R 755 "$volume_path"
+    # In LOCAL_TEST mode (or non-root runs), use a helper container to set
+    # ownership inside Docker volumes without touching host /var/lib/docker.
+    if [ "$LOCAL_TEST" = "1" ] || [ "$EUID" -ne 0 ]; then
+        if [ "$mount_type" = "volume" ] && [ -n "$mount_name" ]; then
+            docker run --rm -v "$mount_name:/target" alpine sh -c \
+                "$mkdir_cmd && chown -R $owner_uid:$owner_gid /target && chmod -R 755 /target"
+            echo "  ✓ $service_name volume fixed via helper container: $mount_name (owner $owner_uid:$owner_gid)"
+        else
+            echo "⚠️  $service_name mount is not a Docker named volume; skipping ownership change in LOCAL_TEST mode"
+        fi
+        return 0
+    fi
 
-    echo "  ✓ $container_name volume fixed at: $volume_path (owner $owner_uid:$owner_gid)"
+    mkdir -p "$mount_source"
+    if [ -n "$required_subdirs" ]; then
+        for subdir in $required_subdirs; do
+            mkdir -p "$mount_source/$subdir"
+        done
+    fi
+    chown -R "$owner_uid:$owner_gid" "$mount_source"
+    chmod -R 755 "$mount_source"
+
+    echo "  ✓ $service_name volume fixed at: $mount_source (owner $owner_uid:$owner_gid)"
+}
+
+escape_sed_replacement() {
+    # Escape chars that are special in sed replacement strings.
+    printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'
 }
 
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -41,9 +77,16 @@ echo "║   Observability Droplet - Multi-Droplet Setup               ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    echo "❌ Please run as root (use sudo)"
+# Check execution mode
+if [ "$LOCAL_TEST" = "1" ]; then
+    echo "🧪 Running in LOCAL_TEST mode (server-only steps will be skipped)"
+    if [ "$OS_NAME" = "Darwin" ] && [ "$EUID" -eq 0 ]; then
+        echo "❌ On macOS local testing, run without sudo:"
+        echo "   LOCAL_TEST=1 ./setup-observability-droplet.sh"
+        exit 1
+    fi
+elif [ "$EUID" -ne 0 ]; then
+    echo "❌ Please run as root (use sudo), or use LOCAL_TEST=1 for local validation"
     exit 1
 fi
 
@@ -62,6 +105,10 @@ fi
 
 # Check if Docker Compose is installed
 if ! docker compose version &> /dev/null; then
+    if [ "$LOCAL_TEST" = "1" ]; then
+        echo "❌ Docker Compose plugin not found. Install Docker Compose first."
+        exit 1
+    fi
     echo "📦 Docker Compose plugin not found. Installing..."
     apt-get update
     apt-get install -y docker-compose-plugin
@@ -77,29 +124,34 @@ echo "📋 Droplet Configuration"
 echo "─────────────────────────"
 
 # Get private IP and VPC network
-PRIVATE_IP=$(ip addr show eth1 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1 || echo "")
-VPC_CIDR=$(ip addr show eth1 | grep "inet\b" | awk '{print $2}' || echo "")
-
-if [ -z "$PRIVATE_IP" ]; then
-    echo "⚠️  Warning: Could not auto-detect private IP"
-    echo "Please enter your droplet's private IP address (e.g., 10.0.1.10):"
-    read -r PRIVATE_IP
-    echo "Please enter your VPC CIDR range (e.g., 10.0.0.0/16):"
-    read -r VPC_CIDR
+if [ "$LOCAL_TEST" = "1" ]; then
+    PRIVATE_IP="127.0.0.1"
+    VPC_CIDR="127.0.0.0/8"
 else
-    # Extract network from CIDR (e.g., 10.0.1.10/16 -> 10.0.0.0/16)
-    if [ -n "$VPC_CIDR" ]; then
-        # Convert to network address
-        IFS=/ read -r ip prefix <<< "$VPC_CIDR"
-        VPC_CIDR=$(echo "$ip" | awk -F. -v prefix="$prefix" '{
-            if (prefix >= 24) print $1"."$2"."$3".0/"prefix;
-            else if (prefix >= 16) print $1"."$2".0.0/"prefix;
-            else if (prefix >= 8) print $1".0.0.0/"prefix;
-            else print "0.0.0.0/"prefix;
-        }')
-    else
+    PRIVATE_IP=$(ip addr show eth1 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1 || echo "")
+    VPC_CIDR=$(ip addr show eth1 | grep "inet\b" | awk '{print $2}' || echo "")
+
+    if [ -z "$PRIVATE_IP" ]; then
+        echo "⚠️  Warning: Could not auto-detect private IP"
+        echo "Please enter your droplet's private IP address (e.g., 10.0.1.10):"
+        read -r PRIVATE_IP
         echo "Please enter your VPC CIDR range (e.g., 10.0.0.0/16):"
         read -r VPC_CIDR
+    else
+        # Extract network from CIDR (e.g., 10.0.1.10/16 -> 10.0.0.0/16)
+        if [ -n "$VPC_CIDR" ]; then
+            # Convert to network address
+            IFS=/ read -r ip prefix <<< "$VPC_CIDR"
+            VPC_CIDR=$(echo "$ip" | awk -F. -v prefix="$prefix" '{
+                if (prefix >= 24) print $1"."$2"."$3".0/"prefix;
+                else if (prefix >= 16) print $1"."$2".0.0/"prefix;
+                else if (prefix >= 8) print $1".0.0.0/"prefix;
+                else print "0.0.0.0/"prefix;
+            }')
+        else
+            echo "Please enter your VPC CIDR range (e.g., 10.0.0.0/16):"
+            read -r VPC_CIDR
+        fi
     fi
 fi
 
@@ -144,11 +196,15 @@ if [ ! -f .env ]; then
     if command -v openssl &> /dev/null; then
         AUTOLOG_KEY=$(openssl rand -hex 16)
         GRAFANA_PASSWORD=$(openssl rand -base64 16)
+        AUTOLOG_KEY_ESCAPED=$(escape_sed_replacement "$AUTOLOG_KEY")
+        GRAFANA_PASSWORD_ESCAPED=$(escape_sed_replacement "$GRAFANA_PASSWORD")
+        DOMAIN_ESCAPED=$(escape_sed_replacement "$DOMAIN")
 
         # Update .env
-        sed -i.bak "s/changeme-generate-random-string/$AUTOLOG_KEY/" .env
-        sed -i "s/changeme-strong-password/$GRAFANA_PASSWORD/" .env
-        sed -i "s/DOMAIN=yourdomain.com/DOMAIN=$DOMAIN/" .env
+        # Use -i.bak for BSD/GNU sed compatibility.
+        sed -i.bak "s|changeme-generate-random-string|$AUTOLOG_KEY_ESCAPED|" .env
+        sed -i.bak "s|changeme-strong-password|$GRAFANA_PASSWORD_ESCAPED|" .env
+        sed -i.bak "s|DOMAIN=yourdomain.com|DOMAIN=$DOMAIN_ESCAPED|" .env
         echo "PRIVATE_IP=$PRIVATE_IP" >> .env
         echo "VPC_CIDR=$VPC_CIDR" >> .env
         echo "ACME_EMAIL=$EMAIL" >> .env
@@ -173,7 +229,9 @@ echo ""
 echo "🔥 Configuring firewall..."
 
 # Configure UFW
-if command -v ufw &> /dev/null; then
+if [ "$LOCAL_TEST" = "1" ]; then
+    echo "⚠️  LOCAL_TEST mode: skipping firewall configuration"
+elif command -v ufw &> /dev/null; then
 
     # Allow SSH (don't lock yourself out!)
     ufw allow 22/tcp comment "SSH"
@@ -237,12 +295,11 @@ echo "📥 Pulling Docker images..."
 docker compose -f docker-compose.yml pull
 
 echo ""
-echo "🚀 Starting observability stack..."
-docker compose -f docker-compose.yml up -d
+echo "🏗️ Creating stateful service containers..."
+docker compose -f docker-compose.yml create grafana prometheus loki tempo alertmanager >/dev/null
 
 echo ""
 echo "🔧 Fixing persistent volume permissions..."
-docker compose -f docker-compose.yml stop grafana prometheus loki tempo alertmanager >/dev/null 2>&1 || true
 
 # Grafana runs as UID 472
 fix_service_volume_permissions "grafana" "/var/lib/grafana" "472" "472" ""
@@ -257,11 +314,17 @@ fix_service_volume_permissions "tempo" "/tmp/tempo" "10001" "10001" "blocks wal 
 # Alertmanager commonly runs as nobody (UID/GID 65534)
 fix_service_volume_permissions "alertmanager" "/alertmanager" "65534" "65534" ""
 
-docker compose -f docker-compose.yml up -d grafana prometheus loki tempo alertmanager
+echo ""
+echo "🚀 Starting core observability services..."
+docker compose -f docker-compose.yml up -d grafana prometheus loki tempo alertmanager redis-autolog autolog-service promtail caddy
 
 echo ""
 echo "⏳ Waiting for services to be healthy..."
 sleep 15
+
+echo ""
+echo "🚀 Starting OTEL Collector..."
+docker compose -f docker-compose.yml up -d otel-collector
 
 echo ""
 echo "🌐 Caddy will automatically obtain SSL certificates..."
