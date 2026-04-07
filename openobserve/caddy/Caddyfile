@@ -1,0 +1,55 @@
+# Caddyfile for OpenObserve Stack
+# Automatic HTTPS with Let's Encrypt
+
+# OpenObserve UI
+observe.{$DOMAIN} {
+    reverse_proxy openobserve:5080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output file /var/log/caddy/openobserve.log {
+            roll_size 20MiB
+            roll_keep 5
+            roll_keep_for 168h
+        }
+        format json
+    }
+}
+
+# Auto-logging service
+autolog.{$DOMAIN} {
+    reverse_proxy autolog-service:5000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output file /var/log/caddy/autolog-service.log {
+            roll_size 20MiB
+            roll_keep 5
+            roll_keep_for 168h
+        }
+        format json
+    }
+}

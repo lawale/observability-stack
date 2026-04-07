@@ -1,4 +1,33 @@
-# Observability Stack - Comprehensive Guide
+# Observability Stack
+
+Multiple observability stack options for production deployment. Choose the stack that fits your needs.
+
+## Available Stacks
+
+| Stack | Directory | Description |
+|-------|-----------|-------------|
+| **Grafana Stack** | `grafana-stack/` | Full-featured: Grafana + Prometheus + Loki + Tempo + AlertManager + Promtail + OTEL Collector |
+| **OpenObserve** | `openobserve/` | Lightweight: OpenObserve (single binary for logs/metrics/traces) + OTEL Collector |
+
+Both stacks include Caddy (reverse proxy with auto-HTTPS), the auto-logging service, and Redis.
+
+## Quick Start
+
+```bash
+# Deploy a stack
+./deploy.sh openobserve up -d
+./deploy.sh grafana-stack up -d
+
+# Other docker compose commands
+./deploy.sh openobserve logs -f
+./deploy.sh openobserve down
+```
+
+Each stack has its own `.env.example` — copy it to `.env` and configure before deploying.
+
+---
+
+# Grafana Stack - Comprehensive Guide
 
 A production-ready observability solution combining the **Grafana Stack** (Loki, Tempo, Prometheus) with **OpenTelemetry**, **Grafana Unified Alerting**, and an **Auto-Logging Service** for intelligent debugging.
 
@@ -9,7 +38,7 @@ A production-ready observability solution combining the **Grafana Stack** (Loki,
 1. [Overview](#overview)
 2. [Architecture](#architecture)
 3. [Components](#components)
-4. [Quick Start](#quick-start)
+4. [Quick Start](#quick-start-1)
 5. [Configuration](#configuration)
 6. [Integrating Applications](#integrating-applications)
 7. [OpenTelemetry Labels](#opentelemetry-labels)

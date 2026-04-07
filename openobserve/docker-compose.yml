@@ -1,0 +1,152 @@
+# Docker Compose for OpenObserve Observability Stack
+#
+# Lightweight alternative to the Grafana stack.
+# OpenObserve replaces Grafana + Prometheus + Loki + Tempo + AlertManager + Promtail
+# in a single binary with built-in UI, alerting, and OTLP ingestion.
+
+networks:
+  observability:
+    driver: bridge
+
+volumes:
+  openobserve-data:
+  redis-autolog:
+  caddy-data:
+  caddy-config:
+  caddy-logs:
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+services:
+  # ==================== OPENOBSERVE ====================
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:v0.14.5
+    container_name: openobserve
+    restart: unless-stopped
+    expose:
+      - "5080"   # UI + API
+      - "5081"   # gRPC (OTLP)
+    environment:
+      - ZO_ROOT_USER_EMAIL=${ZO_ROOT_USER_EMAIL:-admin@example.com}
+      - ZO_ROOT_USER_PASSWORD=${ZO_ROOT_USER_PASSWORD:-changeme}
+      - ZO_DATA_DIR=/data
+      - ZO_TELEMETRY=false
+      # OTLP ingestion (enabled by default, these are explicit for clarity)
+      - ZO_TRACING_ENABLED=true
+      - ZO_TRACING_HEADER_KEY=Authorization
+      - ZO_TRACING_HEADER_VALUE=Basic ${ZO_TOKEN:-}
+    volumes:
+      - openobserve-data:/data
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # ==================== OTEL COLLECTOR ====================
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver - apps send telemetry here
+      - "4318:4318"   # OTLP HTTP receiver - apps send telemetry here
+    expose:
+      - "8888"
+      - "13133"
+    networks:
+      - observability
+    depends_on:
+      openobserve:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # ==================== AUTO-LOGGING SERVICE ====================
+
+  redis-autolog:
+    image: redis:7.4-alpine
+    container_name: redis-autolog
+    restart: unless-stopped
+    volumes:
+      - redis-autolog:/data
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  autolog-service:
+    build:
+      context: ./autolog-service
+      dockerfile: Dockerfile
+    container_name: autolog-service
+    restart: unless-stopped
+    expose:
+      - "5000"
+    environment:
+      - REDIS_HOST=redis-autolog
+      - REDIS_PORT=6379
+      - ALERTMANAGER_WEBHOOK_SECRET=${AUTOLOG_WEBHOOK_SECRET}
+      - LOG_LEVEL=${AUTOLOG_LOG_LEVEL:-INFO}
+      - ERROR_THRESHOLD_COUNT=${ERROR_THRESHOLD_COUNT:-10}
+      - ERROR_THRESHOLD_WINDOW_MINUTES=${ERROR_THRESHOLD_WINDOW_MINUTES:-5}
+      - AUTOLOG_TTL_MINUTES=${AUTOLOG_TTL_MINUTES:-30}
+    networks:
+      - observability
+    depends_on:
+      redis-autolog:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/autolog-service", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # ==================== CADDY REVERSE PROXY ====================
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    networks:
+      - observability
+    depends_on:
+      - openobserve
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging

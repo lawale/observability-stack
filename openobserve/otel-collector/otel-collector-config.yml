@@ -1,0 +1,111 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Prometheus receiver for self-scrape metrics
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ['0.0.0.0:8888']
+
+processors:
+  # Batch processor - improves performance
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+  # Memory limiter - prevents OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Resource processor - add common attributes
+  resource:
+    attributes:
+      - key: cluster
+        value: observability
+        action: upsert
+
+  # Attributes processor - enrich telemetry data
+  attributes:
+    actions:
+      - key: environment
+        action: upsert
+        from_attribute: deployment.environment
+      - key: service.name
+        action: upsert
+        from_attribute: service.name
+
+  # Filter processor - drop telemetry from unknown/unregistered services
+  filter/known_services:
+    error_mode: ignore
+    traces:
+      span:
+        - 'resource.attributes["service.name"] == nil'
+    logs:
+      log_record:
+        - 'resource.attributes["service.name"] == nil'
+
+  # Resource processor for logs
+  resource/logs:
+    attributes:
+      - key: log.source
+        value: otel-collector
+        action: upsert
+
+exporters:
+  # OpenObserve - single exporter for all signals via OTLP HTTP
+  otlphttp/openobserve:
+    endpoint: http://openobserve:5080/api/default
+    headers:
+      Authorization: "Basic ${ZO_TOKEN}"
+      stream-name: default
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+
+  pipelines:
+    # Traces pipeline
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/known_services, batch, resource, attributes]
+      exporters: [otlphttp/openobserve]
+
+    # Metrics pipeline
+    # Note: filter/known_services NOT applied here because the prometheus
+    # receiver (self-scrape) produces metrics without service.name attribute.
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch, resource]
+      exporters: [otlphttp/openobserve]
+
+    # Logs pipeline
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/known_services, batch, resource/logs]
+      exporters: [otlphttp/openobserve]
+
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
