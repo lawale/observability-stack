@@ -1,7 +1,34 @@
-# Caddyfile for OpenObserve Stack
-# Automatic HTTPS with Let's Encrypt
+# Unified Caddyfile for all observability stacks
+# Routes to whichever backends are running on the shared network.
+# If a backend is down, Caddy returns 502 — this is expected.
 
-# OpenObserve UI
+# Grafana (grafana-stack)
+grafana.{$DOMAIN} {
+    reverse_proxy grafana:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output file /var/log/caddy/grafana.log {
+            roll_size 20MiB
+            roll_keep 5
+            roll_keep_for 168h
+        }
+        format json
+    }
+}
+
+# OpenObserve
 observe.{$DOMAIN} {
     reverse_proxy openobserve:5080 {
         header_up Host {host}
@@ -10,7 +37,6 @@ observe.{$DOMAIN} {
         header_up X-Forwarded-Proto {scheme}
     }
 
-    # Security headers
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"

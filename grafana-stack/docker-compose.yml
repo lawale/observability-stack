@@ -1,18 +1,13 @@
-# Docker Compose for Observability Droplet (Multi-Droplet Setup)
+# Grafana Observability Stack
 #
-# This file is optimized for running on a dedicated observability droplet
-# that receives telemetry from applications on separate droplets.
+# Requires shared/ services to be running first (Caddy, Redis, autolog-service).
+# Attaches to the external `observability` network created by shared/.
 #
-# Key differences from single-host setup:
-# - Services listen on private network interface for remote connections
-# - Grafana accessed via Caddy reverse proxy with automatic HTTPS
-# - Optimized for network security and performance
-
-version: '3.8'
+# Services: Grafana, Prometheus, Loki, Tempo, AlertManager, Promtail, OTEL Collector
 
 networks:
   observability:
-    driver: bridge
+    external: true
 
 volumes:
   grafana-storage:
@@ -20,10 +15,6 @@ volumes:
   loki-storage:
   tempo-storage:
   alertmanager-storage:
-  redis-autolog:
-  caddy-data:
-  caddy-config:
-  caddy-logs:
 
 x-default-logging: &default-logging
   driver: json-file
@@ -32,8 +23,6 @@ x-default-logging: &default-logging
     max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 services:
-  # ==================== GRAFANA STACK ====================
-
   grafana:
     image: grafana/grafana:11.4.0
     container_name: grafana
@@ -52,7 +41,6 @@ services:
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,redis-datasource
       - GF_SENTRY_DSN=${GRAFANA_SENTRY_DSN:-}
       - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
-      # Unified Alerting Configuration
       - GF_UNIFIED_ALERTING_ENABLED=true
       - GF_ALERTING_ENABLED=false
     volumes:
@@ -79,13 +67,6 @@ services:
     user: "nobody"
     expose:
       - "9090"
-    # SECURITY NOTE: --web.enable-remote-write-receiver exposes an unauthenticated
-    # write endpoint at /api/v1/write. Currently protected by:
-    #   1. Port 9090 is NOT exposed publicly (only on internal Docker network)
-    #   2. OTEL Collector connects internally via Docker network
-    # If you ever expose Prometheus externally, add basic auth via:
-    #   --web.config.file=/etc/prometheus/web.yml
-    #   web.yml: basic_auth_users: { writer: <bcrypt hash from: htpasswd -nB writer> }
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -160,8 +141,6 @@ services:
       retries: 5
     logging: *default-logging
 
-  # Promtail only for observability stack logs
-  # Application logs come via OTLP or separate Promtail on app droplets
   promtail:
     image: grafana/promtail:3.3.2
     container_name: promtail
@@ -170,7 +149,6 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - ./promtail/promtail-local.yml:/etc/promtail/promtail.yml
-      - caddy-logs:/var/log/caddy:ro
     command: -config.file=/etc/promtail/promtail.yml
     networks:
       - observability
@@ -182,8 +160,8 @@ services:
     image: prom/alertmanager:v0.28.1
     container_name: alertmanager
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:9093:9093"
+    expose:
+      - "9093"
     environment:
       - SMTP_USERNAME=${SMTP_USERNAME:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
@@ -212,49 +190,6 @@ services:
       retries: 5
     logging: *default-logging
 
-  # ==================== AUTO-LOGGING SERVICE ====================
-
-  redis-autolog:
-    image: redis:7.4-alpine
-    container_name: redis-autolog
-    restart: unless-stopped
-    networks:
-      - observability
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging: *default-logging
-
-  autolog-service:
-    build:
-      context: ./autolog-service
-      dockerfile: Dockerfile
-    container_name: autolog-service
-    restart: unless-stopped
-    expose:
-      - "5000"
-    environment:
-      - REDIS_HOST=redis-autolog
-      - REDIS_PORT=6379
-      - ALERTMANAGER_WEBHOOK_SECRET=${AUTOLOG_WEBHOOK_SECRET}
-      - LOG_LEVEL=${AUTOLOG_LOG_LEVEL:-INFO}
-      - ERROR_THRESHOLD_COUNT=${ERROR_THRESHOLD_COUNT:-10}
-      - ERROR_THRESHOLD_WINDOW_MINUTES=${ERROR_THRESHOLD_WINDOW_MINUTES:-5}
-      - AUTOLOG_TTL_MINUTES=${AUTOLOG_TTL_MINUTES:-30}
-    networks:
-      - observability
-    depends_on:
-      redis-autolog:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/autolog-service", "healthcheck"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging: *default-logging
-
   # ==================== OTEL COLLECTOR ====================
 
   otel-collector:
@@ -265,8 +200,8 @@ services:
     volumes:
       - ./otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
     ports:
-      - "4317:4317"   # OTLP gRPC receiver - apps send telemetry here
-      - "4318:4318"   # OTLP HTTP receiver - apps send telemetry here
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
     expose:
       - "8888"
       - "13133"
@@ -285,56 +220,3 @@ services:
       timeout: 5s
       retries: 5
     logging: *default-logging
-
-  # ==================== CADDY REVERSE PROXY ====================
-
-  caddy:
-    image: caddy:2.8-alpine
-    container_name: caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"  # HTTP/3
-    environment:
-      - DOMAIN=${DOMAIN}
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
-      - caddy-logs:/var/log/caddy
-    networks:
-      - observability
-    depends_on:
-      - grafana
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging: *default-logging
-
-# ==================== NOTES ====================
-#
-# Port Binding Strategy:
-#
-# 1. Public-facing UIs (via Caddy):
-#    - Grafana: expose 3000 (Caddy proxies to grafana.yourdomain.com)
-#
-# 2. Telemetry receivers (from app droplets via VPC):
-#    - OTEL Collector gRPC: 0.0.0.0:4317 (apps send here)
-#    - OTEL Collector HTTP: 0.0.0.0:4318 (apps send here)
-#    - Loki: 0.0.0.0:3100 (if using direct log shipping)
-#    - Auto-Log API: 0.0.0.0:5000 (apps query here)
-#
-# 3. Internal only:
-#    - Prometheus: 127.0.0.1:9090
-#    - Tempo: 127.0.0.1:3200
-#    - AlertManager: 127.0.0.1:9093
-#
-# For production, replace 0.0.0.0 with your droplet's private IP:
-# - "10.0.1.10:4317:4317" instead of "4317:4317"
-# - "10.0.1.10:4318:4318" instead of "4318:4318"
-# - etc.
-#
-# This ensures services only listen on the private network interface.

@@ -6,24 +6,37 @@ Multiple observability stack options for production deployment. Choose the stack
 
 | Stack | Directory | Description |
 |-------|-----------|-------------|
-| **Grafana Stack** | `grafana-stack/` | Full-featured: Grafana + Prometheus + Loki + Tempo + AlertManager + Promtail + OTEL Collector |
-| **OpenObserve** | `openobserve/` | Lightweight: OpenObserve (single binary for logs/metrics/traces) + OTEL Collector |
+| **Shared** | `shared/` | Always-on base: Caddy (reverse proxy + HTTPS), Redis, auto-logging service |
+| **Grafana Stack** | `grafana-stack/` | Grafana + Prometheus + Loki + Tempo + AlertManager + Promtail + OTEL Collector |
+| **OpenObserve** | `openobserve/` | OpenObserve (single binary for logs/metrics/traces) + OTEL Collector |
 
-Both stacks include Caddy (reverse proxy with auto-HTTPS), the auto-logging service, and Redis.
+Shared services run independently and provide the network, reverse proxy, and autolog infrastructure. Stacks can run in parallel — each has its own OTEL Collector on different host ports.
 
 ## Quick Start
 
 ```bash
-# Deploy a stack
+# Configure each component
+cp shared/.env.example shared/.env        # Domain, autolog config
+cp openobserve/.env.example openobserve/.env  # OpenObserve credentials
+cp grafana-stack/.env.example grafana-stack/.env  # Grafana, retention, SMTP
+
+# Deploy (shared services start automatically)
 ./deploy.sh openobserve up -d
 ./deploy.sh grafana-stack up -d
 
-# Other docker compose commands
-./deploy.sh openobserve logs -f
-./deploy.sh openobserve down
-```
+# Both UIs accessible simultaneously:
+# - grafana.yourdomain.com
+# - observe.yourdomain.com
+# - autolog.yourdomain.com
 
-Each stack has its own `.env.example` — copy it to `.env` and configure before deploying.
+# Apps send OTLP to:
+# - Grafana stack collector: :4317 (gRPC) / :4318 (HTTP)
+# - OpenObserve collector:   :4327 (gRPC) / :4328 (HTTP)
+
+# Other commands
+./deploy.sh openobserve logs -f
+./deploy.sh shared down
+```
 
 ---
 

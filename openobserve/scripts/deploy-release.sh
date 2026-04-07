@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # Deploy from a clean release directory instead of the git working tree.
-# This keeps source files untouched on the host and avoids git conflicts/noise.
+# Adapted for the OpenObserve stack (fewer stateful volumes, simpler permissions).
 
 set -euo pipefail
 
 SOURCE_DIR="${SOURCE_DIR:-$(pwd)}"
-DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/observability-deploy}"
-PROJECT_NAME="${PROJECT_NAME:-observability}"
+DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/openobserve-deploy}"
+PROJECT_NAME="${PROJECT_NAME:-openobserve}"
 RELEASE_ID="${RELEASE_ID:-$(date +%Y%m%d-%H%M%S)}"
 RELEASE_DIR="$DEPLOY_ROOT/releases/$RELEASE_ID"
 CURRENT_LINK="$DEPLOY_ROOT/current"
@@ -224,6 +224,8 @@ prune_docker_cache() {
   docker container prune -f --filter "until=$DOCKER_PRUNE_UNTIL" || true
 }
 
+# ==================== MAIN ====================
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker is not installed"
   exit 1
@@ -259,6 +261,7 @@ rsync -a --delete \
   --exclude 'backups' \
   "$SOURCE_DIR/" "$RELEASE_DIR/"
 
+# Resolve .env file
 ENV_FILE_USED=""
 if [ "$ENV_SOURCE" = "current" ]; then
   if [ ! -f "$CURRENT_LINK/.env" ]; then
@@ -292,46 +295,31 @@ else
 fi
 echo "Using environment file: $ENV_FILE_USED"
 
-# Keep mounted config files readable without forcing exact chmod mode bits.
-find "$RELEASE_DIR/grafana/provisioning" "$RELEASE_DIR/grafana/dashboards" -type d -exec chmod a+rx {} + 2>/dev/null || true
-find "$RELEASE_DIR/grafana/provisioning" "$RELEASE_DIR/grafana/dashboards" -type f \( -name "*.yml" -o -name "*.yaml" -o -name "*.json" \) -exec chmod a+r {} + 2>/dev/null || true
-chmod a+r "$RELEASE_DIR"/prometheus/*.yml "$RELEASE_DIR"/prometheus/alerts/*.yml \
-  "$RELEASE_DIR"/loki/loki.yml "$RELEASE_DIR"/tempo/tempo.yml \
-  "$RELEASE_DIR"/promtail/*.yml "$RELEASE_DIR"/alertmanager/alertmanager.yml \
-  "$RELEASE_DIR"/otel-collector/otel-collector-config.yml 2>/dev/null || true
+# Fix config file permissions
+chmod a+r "$RELEASE_DIR"/otel-collector/otel-collector-config.yml 2>/dev/null || true
 
 echo "Pulling images..."
 compose pull
 
+# OpenObserve data volume — runs as root inside container by default
 echo "Creating stateful services..."
-compose create grafana prometheus loki tempo alertmanager >/dev/null
+compose create openobserve >/dev/null
 
 if [ "$BACKUP_STATEFUL_VOLUMES" = "1" ]; then
   echo "Creating pre-deploy backups..."
-  backup_service_mount "grafana" "/var/lib/grafana" "grafana-storage"
-  backup_service_mount "prometheus" "/prometheus" "prometheus-storage"
-  backup_service_mount "loki" "/loki" "loki-storage"
-  backup_service_mount "tempo" "/tmp/tempo" "tempo-storage"
-  backup_service_mount "alertmanager" "/alertmanager" "alertmanager-storage"
+  backup_service_mount "openobserve" "/data" "openobserve-data"
 fi
 
-echo "Fixing persistent volume permissions..."
-fix_service_volume_permissions "grafana" "/var/lib/grafana" "472" "472" ""
-fix_service_volume_permissions "prometheus" "/prometheus" "65534" "65534" ""
-fix_service_volume_permissions "loki" "/loki" "10001" "10001" "chunks rules compactor"
-fix_service_volume_permissions "tempo" "/tmp/tempo" "10001" "10001" "blocks wal generator"
-fix_service_volume_permissions "alertmanager" "/alertmanager" "65534" "65534" ""
-
-echo "Starting core services..."
-compose up -d grafana prometheus loki tempo alertmanager promtail
-compose up -d otel-collector
+echo "Starting services..."
+compose up -d openobserve
+compose up -d otel-collector-openobserve
 
 echo "Waiting for service health..."
 if ! wait_for_services "$HEALTH_TIMEOUT_SECONDS" \
-  grafana prometheus loki tempo alertmanager otel-collector; then
+  openobserve otel-collector-openobserve; then
   echo "ERROR: deployment health check failed"
   compose ps
-  compose logs --tail=120 tempo prometheus alertmanager otel-collector || true
+  compose logs --tail=120 openobserve otel-collector-openobserve || true
 
   if [ -n "$PREVIOUS_RELEASE" ] && [ -f "$PREVIOUS_RELEASE/docker-compose.yml" ]; then
     echo "Rolling back to previous release: $PREVIOUS_RELEASE"

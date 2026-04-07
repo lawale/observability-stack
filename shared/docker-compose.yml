@@ -1,0 +1,98 @@
+# Shared infrastructure services for all observability stacks.
+# Start this BEFORE any stack: ./deploy.sh shared up -d
+#
+# Provides:
+# - Caddy reverse proxy (HTTPS, routes to all stack UIs)
+# - Redis (autolog session state)
+# - Auto-logging service (webhook-triggered verbose logging)
+#
+# Creates the `observability` Docker network that stacks attach to.
+
+networks:
+  observability:
+    name: observability
+    driver: bridge
+
+volumes:
+  redis-autolog:
+  caddy-data:
+  caddy-config:
+  caddy-logs:
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+services:
+  # ==================== CADDY REVERSE PROXY ====================
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # ==================== AUTO-LOGGING SERVICE ====================
+
+  redis-autolog:
+    image: redis:7.4-alpine
+    container_name: redis-autolog
+    restart: unless-stopped
+    volumes:
+      - redis-autolog:/data
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  autolog-service:
+    build:
+      context: ./autolog-service
+      dockerfile: Dockerfile
+    container_name: autolog-service
+    restart: unless-stopped
+    expose:
+      - "5000"
+    environment:
+      - REDIS_HOST=redis-autolog
+      - REDIS_PORT=6379
+      - ALERTMANAGER_WEBHOOK_SECRET=${AUTOLOG_WEBHOOK_SECRET}
+      - LOG_LEVEL=${AUTOLOG_LOG_LEVEL:-INFO}
+      - ERROR_THRESHOLD_COUNT=${ERROR_THRESHOLD_COUNT:-10}
+      - ERROR_THRESHOLD_WINDOW_MINUTES=${ERROR_THRESHOLD_WINDOW_MINUTES:-5}
+      - AUTOLOG_TTL_MINUTES=${AUTOLOG_TTL_MINUTES:-30}
+    networks:
+      - observability
+    depends_on:
+      redis-autolog:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/autolog-service", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
