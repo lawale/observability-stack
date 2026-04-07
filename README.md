@@ -15,14 +15,16 @@ Shared services run independently and provide the network, reverse proxy, and au
 ## Quick Start
 
 ```bash
-# Configure each component
-cp shared/.env.example shared/.env        # Domain, autolog config
-cp openobserve/.env.example openobserve/.env  # OpenObserve credentials
-cp grafana-stack/.env.example grafana-stack/.env  # Grafana, retention, SMTP
+# Generate secrets and configure .env files
+./setup.sh
 
-# Deploy (shared services start automatically)
-./deploy.sh openobserve up -d
-./deploy.sh grafana-stack up -d
+# Deploy (versioned release to /opt/observability-deploy/)
+./deploy.sh openobserve       # Deploys shared + openobserve
+./deploy.sh grafana-stack     # Deploys shared + grafana-stack
+./deploy.sh shared            # Deploys shared services only
+
+# Check status
+./deploy.sh status
 
 # Both UIs accessible simultaneously:
 # - grafana.yourdomain.com
@@ -32,10 +34,6 @@ cp grafana-stack/.env.example grafana-stack/.env  # Grafana, retention, SMTP
 # Apps send OTLP to:
 # - OpenObserve collector:   :4317 (gRPC) / :4318 (HTTP)  ← primary
 # - Grafana stack collector: :4327 (gRPC) / :4328 (HTTP)
-
-# Other commands
-./deploy.sh openobserve logs -f
-./deploy.sh shared down
 ```
 
 ---

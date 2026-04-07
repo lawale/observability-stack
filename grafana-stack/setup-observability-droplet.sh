@@ -10,10 +10,10 @@ OS_NAME="$(uname -s)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-DEPLOY_SCRIPT="$SCRIPT_DIR/scripts/deploy-release.sh"
-SOURCE_DIR="${SOURCE_DIR:-$SCRIPT_DIR}"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEPLOY_SCRIPT="$REPO_ROOT/deploy.sh"
+SOURCE_DIR="${SOURCE_DIR:-$REPO_ROOT}"
 DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/observability-deploy}"
-PROJECT_NAME="${PROJECT_NAME:-observability}"
 
 escape_sed_replacement() {
     # Escape chars that are special in sed replacement strings.
@@ -352,7 +352,6 @@ ENV_SOURCE="${ENV_SOURCE:-source}"
 
 SOURCE_DIR="$SOURCE_DIR" \
 DEPLOY_ROOT="$DEPLOY_ROOT" \
-PROJECT_NAME="$PROJECT_NAME" \
 BACKUP_STATEFUL_VOLUMES="$BACKUP_STATEFUL_VOLUMES" \
 HEALTH_TIMEOUT_SECONDS="$HEALTH_TIMEOUT_SECONDS" \
 KEEP_RELEASES="$KEEP_RELEASES" \
@@ -361,7 +360,7 @@ ENABLE_DOCKER_PRUNE="$ENABLE_DOCKER_PRUNE" \
 DOCKER_PRUNE_UNTIL="$DOCKER_PRUNE_UNTIL" \
 PRUNE_UNUSED_IMAGES="$PRUNE_UNUSED_IMAGES" \
 ENV_SOURCE="$ENV_SOURCE" \
-bash "$DEPLOY_SCRIPT"
+bash "$DEPLOY_SCRIPT" grafana-stack
 
 echo ""
 echo "🌐 Caddy will automatically obtain SSL certificates..."
