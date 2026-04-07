@@ -20,7 +20,7 @@ x-default-logging: &default-logging
 
 services:
   openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:v0.14.5
+    image: public.ecr.aws/zinclabs/openobserve:latest
     container_name: openobserve
     restart: unless-stopped
     expose:
@@ -38,11 +38,8 @@ services:
       - openobserve-data:/data
     networks:
       - observability
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5080/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # No healthcheck — OpenObserve's default image doesn't ship wget/curl.
+    # Only available on their debug image (openobserve:latest-debug).
     logging: *default-logging
 
   # ==================== OTEL COLLECTOR ====================
@@ -65,7 +62,7 @@ services:
       - observability
     depends_on:
       openobserve:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "/otelcol-contrib", "--version"]
       interval: 10s
