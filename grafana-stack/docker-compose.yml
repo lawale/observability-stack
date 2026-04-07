@@ -200,8 +200,8 @@ services:
     volumes:
       - ./otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
     ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
+      - "4327:4317"   # OTLP gRPC receiver (host 4327 to avoid clash)
+      - "4328:4318"   # OTLP HTTP receiver (host 4328 to avoid clash)
     expose:
       - "8888"
       - "13133"

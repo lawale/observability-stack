@@ -30,8 +30,8 @@ cp grafana-stack/.env.example grafana-stack/.env  # Grafana, retention, SMTP
 # - autolog.yourdomain.com
 
 # Apps send OTLP to:
-# - Grafana stack collector: :4317 (gRPC) / :4318 (HTTP)
-# - OpenObserve collector:   :4327 (gRPC) / :4328 (HTTP)
+# - OpenObserve collector:   :4317 (gRPC) / :4318 (HTTP)  ← primary
+# - Grafana stack collector: :4327 (gRPC) / :4328 (HTTP)
 
 # Other commands
 ./deploy.sh openobserve logs -f

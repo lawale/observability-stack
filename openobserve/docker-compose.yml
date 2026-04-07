@@ -46,7 +46,7 @@ services:
     logging: *default-logging
 
   # ==================== OTEL COLLECTOR ====================
-  # Host ports 4327/4328 to avoid clashing with grafana-stack's collector (4317/4318)
+  # Primary OTLP ports (4317/4318) — apps send here by default
 
   otel-collector-openobserve:
     image: otel/opentelemetry-collector-contrib:0.115.1
@@ -56,8 +56,8 @@ services:
     volumes:
       - ./otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
     ports:
-      - "4327:4317"   # OTLP gRPC receiver (host 4327 → container 4317)
-      - "4328:4318"   # OTLP HTTP receiver (host 4328 → container 4318)
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
     expose:
       - "8888"
       - "13133"
